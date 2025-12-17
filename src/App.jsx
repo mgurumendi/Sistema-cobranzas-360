@@ -1,34 +1,56 @@
+'use client';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 import { 
   Users, DollarSign, Calendar, CheckCircle, XCircle, Search, 
-  FileText, Save, User, ArrowLeft, Activity, Filter, CreditCard, AlertCircle, TrendingUp, PieChart as PieIcon, Layers, ChevronRight, Briefcase, Clock, Calculator, PlusCircle, MinusCircle, ClipboardList, Upload, FileSpreadsheet, Trash2, Download, Printer, BarChart2, Table as TableIcon, Settings, Bell, Calendar as CalendarIcon, ListFilter, RefreshCw, UserPlus, X
+  FileText, Save, User, ArrowLeft, Activity, Filter, CreditCard, AlertCircle, TrendingUp, 
+  PieChart as PieIcon, Layers, ChevronRight, Briefcase, Clock, Calculator, PlusCircle, 
+  MinusCircle, ClipboardList, Upload, FileSpreadsheet, Trash2, Download, Printer, 
+  BarChart2, Table as TableIcon, Settings, Bell, Calendar as CalendarIcon, ListFilter, 
+  RefreshCw, UserPlus, X, CalendarClock
 } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getFirestore, collection, doc, setDoc, onSnapshot, 
   updateDoc, arrayUnion, serverTimestamp, deleteDoc 
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
-// --- CONFIGURACIÓN FIREBASE ---
-// ⚠️ REEMPLAZA ESTOS VALORES CON LOS DE TU CONSOLA DE FIREBASE
-const firebaseConfig = {
-   apiKey: "AIzaSyD6_6DCaB-n0K2akPct1gBIZucQZVNVmZI",
-  authDomain: "cobranzas-360-web.firebaseapp.com",
-  projectId: "cobranzas-360-web",
-  storageBucket: "cobranzas-360-web.firebasestorage.app",
-  messagingSenderId: "795609253006",
-  appId: "1:795609253006:web:b447d8a3a0161ad213b5df",
-  measurementId: "G-E7GN3J6CVZ"
-};
+// --- CONFIGURACIÓN FIREBASE UNIVERSAL (MODO SEGURO) ---
+let app, auth, db;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = 'cobranzas-app-v1'; // Nombre interno para la colección
+// Colección central para los datos de gestión
+const COLLECTION_NAME = typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data/cobranzas_data` : 'clientes';
+const MANUAL_COLLECTION_NAME = typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data/cobranzas_manual_clients` : 'clientes_manuales';
+
+// CORRECCIÓN CRÍTICA: Inicializar la aplicación solo si la configuración existe.
+try {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    const firebaseConfig = JSON.parse(__firebase_config);
+    
+    // Inicializar Firebase
+    app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    auth = getAuth(app);
+    db = getFirestore(app);
+    
+  } else {
+    // Si no hay configuración, forzar los valores a null para entrar en modo offline seguro.
+    app = null;
+    auth = null;
+    db = null;
+    // Lanzar un error para que el bloque catch muestre la advertencia
+    throw new Error("No Firebase Config detected. Running in Offline Mode.");
+  }
+} catch (e) {
+  console.warn("⚠️ MODO OFFLINE ACTIVADO: No se detectó configuración de Firebase válida. Los datos NO se guardarán.", e);
+  // Asegurar que las variables sean null después de cualquier intento de fallo
+  app = null;
+  auth = null;
+  db = null;
+}
 
 // --- DATOS MAESTROS INICIALES ---
 const KPI_META = {
@@ -55,18 +77,15 @@ const INITIAL_BASE_DATA = [
   { id: "0101ADP005053", grupo: "ADP005", puesto: 53, cliente: "PAZ MIRALLA RAMON AURELIO", celular: "0959637842", cuota: 277, vencidas: 11, saldo: 5148, cedula: "0906516463", ejecutivo: "Gianella", ciudad: "GUAYAQUIL" },
   { id: "0101ADP005103", grupo: "ADP005", puesto: 103, cliente: "REYES SANTANA ELIO DEMECIO", celular: "0991413550", cuota: 167, vencidas: 0, saldo: 7332, cedula: "0912813714", ejecutivo: "Gianella", ciudad: "GUAYAQUIL" },
   { id: "0101ACV003045", grupo: "ACV003", puesto: 45, cliente: "PEREZ ZAMBRANO JOSE LUIS", celular: "0987654321", cuota: 300, vencidas: 2, saldo: 4500, cedula: "0918273645", ejecutivo: "Gianella", ciudad: "GUAYAQUIL" },
-  
   // --- MIGUEL ---
   { id: "0101ACV001008", grupo: "ACV001", puesto: 8, cliente: "RAMIREZ CORDOVA SERGIO ENRIQUE", celular: "0985965387", cuota: 250, vencidas: 3, saldo: 5500, cedula: "0912141553", ejecutivo: "Miguel", ciudad: "GUAYAQUIL" },
   { id: "0101ADP005096", grupo: "ADP005", puesto: 96, cliente: "BURGOS VEGA JULIO CESAR", celular: "0999772794", cuota: 312, vencidas: 11, saldo: 22144, cedula: "0913142907", ejecutivo: "Miguel", ciudad: "GUAYAQUIL" },
   { id: "0101ADP005102", grupo: "ADP005", puesto: 102, cliente: "QUIMIS PINCAY ROBERTO CARLOS", celular: "0999009604", cuota: 182, vencidas: 0, saldo: 8918, cedula: "0915288013", ejecutivo: "Miguel", ciudad: "GUAYAQUIL" },
   { id: "0101ADP005125", grupo: "ADP005", puesto: 125, cliente: "HERNANDEZ CHALEN MARIA LORENA", celular: "0997053351", cuota: 343, vencidas: 0, saldo: 15092, cedula: "0912064680", ejecutivo: "Miguel", ciudad: "GUAYAQUIL" },
-  
   // --- JORDY ---
   { id: "0101ADP001015", grupo: "ADP001", puesto: 15, cliente: "PACHECO ALARCON RONALD ANDRES", celular: "0969027947", cuota: 312, vencidas: 11, saldo: 3432, cedula: "0952603884", ejecutivo: "Jordy", ciudad: "GUAYAQUIL" },
   { id: "0101ADP001018", grupo: "ADP001", puesto: 18, cliente: "CUENCA CALLE MIGUEL ROBERTO", celular: "0910562222", cuota: 359, vencidas: 5, saldo: 1795, cedula: "0910562222", ejecutivo: "Jordy", ciudad: "GUAYAQUIL" },
   { id: "0101ADP001034", grupo: "ADP001", puesto: 34, cliente: "PARDO LOPEZ JONATHAN EMANUEL", celular: "0960449137", cuota: 173, vencidas: 11, saldo: 1903, cedula: "0706244423", ejecutivo: "Jordy", ciudad: "GUAYAQUIL" },
-  
   // --- FABIOLA ---
   { id: "0101ADP005124", grupo: "ADP005", puesto: 124, cliente: "BOHORQUEZ BAZAN ALEJANDRO ULPIANO", celular: "0967870830", cuota: 281, vencidas: 0, saldo: 15455, cedula: "0907640916", ejecutivo: "Fabiola", ciudad: "GUAYAQUIL" },
   { id: "0101ACV002012", grupo: "ACV002", puesto: 12, cliente: "LOPEZ GARCIA ANA MARIA", celular: "0991234567", cuota: 220, vencidas: 1, saldo: 4000, cedula: "0911223344", ejecutivo: "Fabiola", ciudad: "QUITO" },
@@ -89,7 +108,8 @@ const ManualClientForm = ({ onClose, onSave }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!formData.cliente || !formData.cuota) return alert("Nombre y Cuota son obligatorios");
+        // Usamos console.error en lugar de alert
+        if (!formData.cliente || !formData.cuota) return console.error("Nombre y Cuota son obligatorios");
         
         onSave({
             ...formData,
@@ -138,25 +158,25 @@ const ManualClientForm = ({ onClose, onSave }) => {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Financiamiento</label>
-                        <select name="manualType" className="w-full border border-slate-300 rounded-lg p-2" onChange={handleChange}>
-                            <option>Seguro</option>
-                            <option>Rastreo Vehicular</option>
-                            <option>Otro</option>
-                        </select>
-                    </div>
-                    {formData.manualType === 'Otro' && (
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Descripción del Financiamiento</label>
-                            <input name="manualDesc" placeholder="Especifique..." className="w-full border border-slate-300 rounded-lg p-2" onChange={handleChange} />
+                            <select name="manualType" className="w-full border border-slate-300 rounded-lg p-2" onChange={handleChange}>
+                                <option>Seguro</option>
+                                <option>Rastreo Vehicular</option>
+                                <option>Otro</option>
+                            </select>
                         </div>
-                    )}
-                    <div className="pt-4 flex justify-end gap-2">
-                        <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
-                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium">Guardar Registro</button>
-                    </div>
-                </form>
+                        {formData.manualType === 'Otro' && (
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Descripción del Financiamiento</label>
+                                <input name="manualDesc" placeholder="Especifique..." className="w-full border border-slate-300 rounded-lg p-2" onChange={handleChange} />
+                            </div>
+                        )}
+                        <div className="pt-4 flex justify-end gap-2">
+                            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                            <button type="submit" className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium">Guardar Registro</button>
+                        </div>
+                    </form>
+                </div>
             </div>
-        </div>
     );
 };
 
@@ -328,7 +348,7 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
 
         <div className="space-y-6">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden no-print">
-             <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center gap-2"><CalendarIcon className="h-5 w-5 text-purple-600" /><h3 className="font-bold text-slate-800">Programar Seguimiento / Alerta</h3></div>
+             <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center gap-2"><CalendarClock className="h-5 w-5 text-purple-600" /><h3 className="font-bold text-slate-800">Programar Seguimiento / Alerta</h3></div>
              <div className="p-5">
                <div className="flex gap-3">
                  <input type="date" className="flex-1 border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-purple-500 outline-none" value={commitmentDateInput} onChange={(e) => setCommitmentDateInput(e.target.value)} />
@@ -369,7 +389,7 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
 
 // --- MAIN COMPONENT ---
 export default function CobranzasApp() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null); 
   const [view, setView] = useState('dashboard'); 
   const [selectedClient, setSelectedClient] = useState(null);
   const [updates, setUpdates] = useState({});
@@ -378,6 +398,7 @@ export default function CobranzasApp() {
   const [filterAlertType, setFilterAlertType] = useState('all'); 
   const [baseData, setBaseData] = useState(INITIAL_BASE_DATA); 
   const [weeksConfig, setWeeksConfig] = useState(5); 
+  const [isOffline, setIsOffline] = useState(false);
   
   // ESTADOS PARA REGISTRO MANUAL
   const [showManualForm, setShowManualForm] = useState(false);
@@ -385,54 +406,76 @@ export default function CobranzasApp() {
   
   const fileInputRef = useRef(null);
 
+  // --- AUTENTICACIÓN AUTOMÁTICA ---
   useEffect(() => {
+    if (!auth) {
+      setUser({ uid: 'offline-user' });
+      setIsOffline(true);
+      return;
+    }
+
     const initAuth = async () => {
-      // INTENTO DE AUTENTICACIÓN
-      try {
-        await signInAnonymously(auth);
-      } catch(e) {
-        console.error("Error en autenticación anónima:", e);
-      }
+        // 1. Intenta iniciar sesión con token de Canvas (si existe)
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+           await signInWithCustomToken(auth, __initial_auth_token).catch(() => signInAnonymously(auth));
+        } 
+        // 2. Si no hay token, inicia sesión anónima (para que Firestore funcione)
+        else {
+           await signInAnonymously(auth).catch(err => console.error("Error Auth:", err));
+        }
     };
+
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
+  // --- SINCRONIZACIÓN DE DATOS (SNAPSHOT) ---
   useEffect(() => {
-    if (!user) return;
-    const q = collection(db, 'artifacts', appId, 'public', 'data', 'cobranzas_dic25_final_v2'); 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newUpdates = {};
-      snapshot.forEach(doc => {
-        newUpdates[doc.id] = doc.data();
-      });
-      setUpdates(newUpdates);
+    if (!db || !user || isOffline) return;
+    
+    // Escuchar cambios en la colección principal
+    const q = collection(db, COLLECTION_NAME);
+    const unsubscribeMain = onSnapshot(q, (snapshot) => {
+       const cloudData = {};
+       snapshot.forEach(doc => {
+          cloudData[doc.id] = doc.data();
+       });
+       setUpdates(cloudData);
+    }, (error) => {
+       console.error("Error obteniendo datos de la colección principal:", error);
     });
-    return () => unsubscribe();
-  }, [user]);
-  
-  // LISTENER PARA CLIENTES MANUALES
-  useEffect(() => {
-    if (!user) return;
-    const q = collection(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manual_clients_v1'); 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedManualClients = [];
-      snapshot.forEach(doc => {
-        loadedManualClients.push({ ...doc.data(), id: doc.id });
-      });
-      setManualClients(loadedManualClients);
+    
+    // Escuchar cambios en la colección de manuales
+    const qManual = collection(db, MANUAL_COLLECTION_NAME);
+    const unsubscribeManual = onSnapshot(qManual, (snapshot) => {
+       const cloudManuals = [];
+       snapshot.forEach(doc => {
+          const data = doc.data();
+          cloudManuals.push({ ...data, id: doc.id });
+       });
+       setManualClients(cloudManuals);
+    }, (error) => {
+       console.error("Error obteniendo datos de manuales:", error);
     });
-    return () => unsubscribe();
-  }, [user]);
+
+
+    return () => {
+        unsubscribeMain();
+        unsubscribeManual();
+    };
+  }, [user, isOffline]);
+
+  // SIMULACIÓN DE BASE DE DATOS LOCAL
+  const updateLocalData = (clientId, newData) => {
+      setUpdates(prev => ({
+          ...prev,
+          [clientId]: { ...(prev[clientId] || {}), ...newData }
+      }));
+  };
 
   const mergedData = useMemo(() => {
-    let combinedBase = [];
-    if (!baseData || !Array.isArray(baseData) || baseData.length === 0) {
-        combinedBase = [...INITIAL_BASE_DATA, ...manualClients]; 
-    } else {
-        combinedBase = [...baseData, ...manualClients];
-    }
+    let combinedBase = [...baseData, ...manualClients];
     
     const today = new Date().toISOString().split('T')[0];
 
@@ -445,8 +488,9 @@ export default function CobranzasApp() {
       const saldoVal = parseFloat(client.saldo) || 0;
       const vencidasVal = parseInt(client.vencidas) || 0;
 
-      const cuotasPagadas = parseInt(clientUpdate.cuotasPagadas) || 0;
-      const abono = parseFloat(clientUpdate.abono) || 0;
+      // Usar los datos de 'updates' para override
+      const cuotasPagadas = parseInt(clientUpdate.cuotasPagadas || client.cuotasPagadas) || 0;
+      const abono = parseFloat(clientUpdate.abono || client.abono) || 0;
       
       const montoPagadoTotal = (cuotasPagadas * cuotaVal) + abono;
       
@@ -469,12 +513,11 @@ export default function CobranzasApp() {
 
       return {
         ...client,
+        ...clientUpdate, // Mezcla todos los updates encima de la base
         cliente: client.cliente || 'Sin Nombre',
         ejecutivo: client.ejecutivo || 'Sin Asignar',
         grupo: client.grupo || 'Sin Grupo',
         id: client.id || `unknown-${Math.random()}`,
-        cedula: client.cedula || '',
-        celular: client.celular || '',
         cuota: cuotaVal,
         saldo: saldoVal,
         vencidas: vencidasVal,
@@ -490,7 +533,10 @@ export default function CobranzasApp() {
         ultimaGestionFecha: lastComment ? new Date(lastComment.date).toLocaleDateString() : 'Sin gestión',
         ultimaGestionTexto: lastComment ? lastComment.text : '',
         commitmentDate: commitmentDate,
-        alertStatus: alertStatus
+        alertStatus: alertStatus,
+        isManual: client.isManual || false,
+        manualType: client.manualType || null,
+        manualDesc: client.manualDesc || null,
       };
     }).filter(item => item !== null);
   }, [updates, baseData, manualClients]);
@@ -502,96 +548,81 @@ export default function CobranzasApp() {
   };
 
   const handleSavePayment = async (clientId, numCuotas, abonoVal) => {
-    if (!user) return;
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_dic25_final_v2', clientId);
-    try {
-      await setDoc(docRef, {
-        cuotasPagadas: numCuotas,
-        abono: abonoVal,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-    } catch (e) {
-      console.error("Error guardando pago", e);
+    if (isOffline) {
+      updateLocalData(clientId, { cuotasPagadas: numCuotas, abono: abonoVal, updatedAt: new Date().toISOString() });
+      return;
     }
+    if (!user) return;
+    const docRef = doc(db, COLLECTION_NAME, clientId);
+    try {
+      await setDoc(docRef, { cuotasPagadas: numCuotas, abono: abonoVal, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (e) { console.error("Error guardando pago", e); }
   };
 
   const handleSaveCommitment = async (clientId, date) => {
-    if (!user) return;
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_dic25_final_v2', clientId);
-    try {
-      await setDoc(docRef, {
-        commitmentDate: date,
-        updatedAt: serverTimestamp() 
-      }, { merge: true });
-    } catch (e) {
-      console.error("Error guardando compromiso", e);
+    if (isOffline) {
+        updateLocalData(clientId, { commitmentDate: date, updatedAt: new Date().toISOString() });
+        return;
     }
+    if (!user) return;
+    const docRef = doc(db, COLLECTION_NAME, clientId);
+    try {
+      await setDoc(docRef, { commitmentDate: date, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (e) { console.error("Error guardando compromiso", e); }
   };
   
   const handleSaveManualClient = async (data) => {
-     if (!user) return;
-     const newId = `MAN-${Date.now()}`;
-     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manual_clients_v1', newId);
-     const newClient = {
-         ...data,
-         id: newId,
-         isManual: true,
-         createdAt: serverTimestamp(),
-         vencidas: 0, 
-         saldo: data.cuota 
-     };
-     
-     try {
-         await setDoc(docRef, newClient);
-         setShowManualForm(false);
-     } catch (e) {
-         console.error("Error saving manual client", e);
-     }
+      const newId = `MAN-${Date.now()}`;
+      const newClient = { ...data, id: newId, isManual: true, createdAt: new Date().toISOString(), vencidas: 0, saldo: data.cuota };
+
+      if (isOffline) {
+          setManualClients(prev => [...prev, newClient]);
+          setShowManualForm(false);
+          return;
+      }
+      
+      if (!user) return;
+      const docRef = doc(db, MANUAL_COLLECTION_NAME, newId);
+      const clientToSave = { ...newClient, createdAt: serverTimestamp() }; // Sobrescribe la fecha para Firestore
+      
+      try { await setDoc(docRef, clientToSave); setShowManualForm(false); } catch (e) { console.error("Error saving manual", e); }
   };
 
   const handleDeleteManualClient = async (clientId) => {
-      if (!user) return;
-      if (window.confirm("¿Está seguro que desea dar de baja este registro manual? Esta acción es irreversible.")) {
-          try {
-              const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manual_clients_v1', clientId);
-              await deleteDoc(docRef);
-              setView('list'); 
-          } catch(e) {
-              console.error("Error deleting", e);
-          }
-      }
+       if (!window.confirm("¿Eliminar registro? Esta acción es irreversible.")) return;
+       
+       if (isOffline) {
+           setManualClients(prev => prev.filter(c => c.id !== clientId));
+           setView('list');
+           return;
+       }
+       
+       if (!user) return;
+       try {
+           const docRef = doc(db, MANUAL_COLLECTION_NAME, clientId);
+           await deleteDoc(docRef);
+           setView('list'); 
+       } catch(e) { console.error("Error deleting", e); }
   };
 
   const handleAddComment = async (clientId, text, week, customDate) => {
+    const newComment = { text, week, date: customDate ? new Date(customDate).toISOString() : new Date().toISOString(), author: "Gestor", timestamp: Date.now() };
+    
+    if (isOffline) {
+        const currentComments = updates[clientId]?.comentarios || [];
+        updateLocalData(clientId, { comentarios: [...currentComments, newComment], updatedAt: new Date().toISOString() });
+        return;
+    }
     if (!user) return;
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_dic25_final_v2', clientId);
-    const newComment = {
-      text,
-      week,
-      date: customDate ? new Date(customDate).toISOString() : new Date().toISOString(),
-      author: "Gestor",
-      timestamp: Date.now()
-    };
-    try {
-      await setDoc(docRef, {
-        comentarios: arrayUnion(newComment),
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-    } catch (e) {
-      console.error("Error guardando comentario", e);
-    }
+    
+    const docRef = doc(db, COLLECTION_NAME, clientId);
+    try { await setDoc(docRef, { comentarios: arrayUnion(newComment), updatedAt: serverTimestamp() }, { merge: true }); } catch (e) { console.error("Error comentario", e); }
   };
 
-  const handleClearBase = () => {
-    if (window.confirm("ATENCIÓN: ¿Está seguro que desea eliminar la base actual?")) {
-      setBaseData([]);
-    }
-  };
-  
-  const handleRestoreBase = () => {
-      setBaseData(INITIAL_BASE_DATA);
-  };
+  const handleClearBase = () => { if (window.confirm("ATENCIÓN: ¿Borrar base?")) setBaseData([]); };
+  const handleRestoreBase = () => setBaseData(INITIAL_BASE_DATA);
 
+  // ... (handleExportReport, handlePrintDashboard, handleFileUpload logic remains the same)
   const handleExportReport = () => {
     const tableRows = mergedData.map(c => `
       <tr style="height: 25px;">
@@ -606,15 +637,16 @@ export default function CobranzasApp() {
         <td style="border: 1px solid #ccc; mso-number-format:'0.00'">${(c.saldo || 0).toFixed(2)}</td>
         <td style="border: 1px solid #ccc;">${c.vencidas}</td>
         <td style="border: 1px solid #ccc;">${c.cuotasPagadas}</td>
-        <td style="border: 1px solid #ccc; mso-number-format:'0.00'">${c.abono.toFixed(2)}</td>
-        <td style="border: 1px solid #ccc; background-color: #d1e7dd; mso-number-format:'0.00'">${c.montoPagadoTotal.toFixed(2)}</td>
-        <td style="border: 1px solid #ccc; mso-number-format:'0.00'">${c.saldoActual.toFixed(2)}</td>
+        <td style="border: 1px solid #ccc; mso-number-format:'0.00'">${(c.abono || 0).toFixed(2)}</td>
+        <td style="border: 1px solid #ccc; background-color: #d1e7dd; mso-number-format:'0.00'">${(c.montoPagadoTotal || 0).toFixed(2)}</td>
+        <td style="border: 1px solid #ccc; mso-number-format:'0.00'">${(c.saldoActual || 0).toFixed(2)}</td>
         <td style="border: 1px solid #ccc;">${c.vencidasActuales}</td>
         <td style="border: 1px solid #ccc;">${c.gestionado ? "GESTIONADO" : "PENDIENTE"}</td>
         <td style="border: 1px solid #ccc;">${c.fechaPago ? new Date(c.fechaPago).toLocaleDateString() : "-"}</td>
         <td style="border: 1px solid #ccc;">${c.ultimaGestionFecha}</td>
         <td style="border: 1px solid #ccc;">${c.ultimaGestionTexto}</td>
         <td style="border: 1px solid #ccc;">${c.commitmentDate || '-'}</td>
+        <td style="border: 1px solid #ccc;">${c.manualType || '-'}</td>
       </tr>
     `).join('');
 
@@ -653,6 +685,7 @@ export default function CobranzasApp() {
               <th>ULTIMA GESTION</th>
               <th>COMENTARIO GESTION</th>
               <th>FECHA COMPROMISO</th>
+              <th>TIPO FINANCIAMIENTO</th>
             </tr>
           </thead>
           <tbody>
@@ -662,7 +695,6 @@ export default function CobranzasApp() {
       </body>
       </html>
     `;
-
     const blob = new Blob([tableContent], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -673,9 +705,7 @@ export default function CobranzasApp() {
     document.body.removeChild(link);
   };
 
-  const handlePrintDashboard = () => {
-    window.print();
-  };
+  const handlePrintDashboard = () => window.print();
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -723,9 +753,10 @@ export default function CobranzasApp() {
 
       if (newClients.length > 0) {
         setBaseData(newClients);
-        alert(`¡Importación exitosa! Se cargaron ${newClients.length} clientes.`);
+        // Usamos console.log en lugar de alert()
+        console.log(`¡Importación exitosa! Se cargaron ${newClients.length} clientes.`);
       } else {
-        alert("No se pudieron procesar clientes. Verifique el formato CSV.");
+        console.error("No se pudieron procesar clientes. Verifique el formato CSV.");
       }
     };
     reader.readAsText(file);
@@ -813,9 +844,7 @@ export default function CobranzasApp() {
     );
   };
 
-  // ... (renderDashboard logic remains same) ...
   const renderDashboard = () => {
-    // ... logic ...
     const totalRecaudadoSistema = mergedData.reduce((acc, curr) => acc + (curr.montoPagadoTotal || 0), 0);
     const recaudadoTotalVisual = KPI_META.recaudadoReal + totalRecaudadoSistema;
     const porcentajeCumplimiento = ((recaudadoTotalVisual / KPI_META.mensual) * 100).toFixed(1);
@@ -875,11 +904,11 @@ export default function CobranzasApp() {
       <div className="space-y-6 animate-fade-in pb-10">
         <div className="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6 relative z-10">
-            <div><h2 className="text-3xl font-bold">Dashboard de Cobranzas</h2><p className="text-blue-100 mt-2 flex items-center gap-2"><CalendarIcon className="h-4 w-4" /> Diciembre 2025</p></div>
+            <div><h2 className="text-3xl font-bold">Dashboard de Cobranzas</h2><p className="text-blue-100 mt-2 flex items-center gap-2"><Calendar className="h-4 w-4" /> Diciembre 2025</p></div>
             <div className="flex gap-4 no-print items-center">
-               <div className="bg-emerald-500/20 px-4 py-2 rounded-lg text-center border border-emerald-400/30"><p className="text-[10px] text-emerald-100 uppercase font-bold tracking-wider">Total Gestionados</p><p className="text-xl font-bold text-white">{totalGestionados}</p></div>
-               <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg"><Settings className="h-4 w-4 text-white" /><select className="bg-transparent text-sm text-white border-none focus:ring-0 cursor-pointer" value={weeksConfig} onChange={(e) => setWeeksConfig(parseInt(e.target.value))}><option value={4} className="text-slate-800">4 Semanas</option><option value={5} className="text-slate-800">5 Semanas</option></select></div>
-               <button onClick={handlePrintDashboard} className="bg-white/10 hover:bg-white/20 text-white border border-white/30 px-4 py-2 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"><Printer className="h-5 w-5" /> Imprimir Reporte Gráfico (PDF)</button>
+              <div className="bg-emerald-500/20 px-4 py-2 rounded-lg text-center border border-emerald-400/30"><p className="text-[10px] text-emerald-100 uppercase font-bold tracking-wider">Total Gestionados</p><p className="text-xl font-bold text-white">{totalGestionados}</p></div>
+              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg"><Settings className="h-4 w-4 text-white" /><select className="bg-transparent text-sm text-white border-none focus:ring-0 cursor-pointer" value={weeksConfig} onChange={(e) => setWeeksConfig(parseInt(e.target.value))}><option value={4} className="text-slate-800">4 Semanas</option><option value={5} className="text-slate-800">5 Semanas</option></select></div>
+              <button onClick={handlePrintDashboard} className="bg-white/10 hover:bg-white/20 text-white border border-white/30 px-4 py-2 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"><Printer className="h-5 w-5" /> Imprimir Reporte Gráfico (PDF)</button>
             </div>
           </div>
           <div className="flex gap-6 mt-6 pt-6 border-t border-white/10"><div><p className="text-xs text-blue-100 uppercase tracking-wide">Cobertura</p><p className="text-2xl font-bold">{coberturaPorcentaje}%</p></div><div><p className="text-xs text-emerald-100 uppercase tracking-wide">Recaudado</p><p className="text-2xl font-bold text-emerald-300">${recaudadoTotalVisual.toLocaleString()}</p></div></div>
@@ -891,33 +920,33 @@ export default function CobranzasApp() {
           <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><div className="flex justify-between items-start"><div><p className="text-slate-500 text-sm font-medium">Por Cobrar</p><h3 className="text-2xl font-bold mt-1 text-amber-600">${(KPI_META.mensual - recaudadoTotalVisual).toLocaleString()}</h3></div><div className="p-2 bg-amber-50 rounded-lg"><DollarSign className="h-5 w-5 text-amber-600" /></div></div></div>
         </div>
         
-         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-6 page-break-avoid">
-           <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><Activity className="h-5 w-5 text-blue-600" /> Análisis de Cumplimiento Semanal ($ Meta vs $ Real)</h3>
-           <div className="overflow-x-auto">
-             <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
-               <thead className="bg-blue-50">
-                 <tr><th className="px-6 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider">Semana</th><th className="px-6 py-3 text-right text-xs font-medium text-blue-800 uppercase tracking-wider">Recaudado ($)</th><th className="px-6 py-3 text-right text-xs font-medium text-blue-800 uppercase tracking-wider">Meta ($)</th><th className="px-6 py-3 text-right text-xs font-medium text-blue-800 uppercase tracking-wider">% Alcanzado</th><th className="px-6 py-3 text-center text-xs font-medium text-blue-800 uppercase tracking-wider">Estado</th></tr>
-               </thead>
-               <tbody className="bg-white divide-y divide-gray-200">
-                 {weeks.map((week) => {
-                   const revenue = weeklyTotalRevenue[week] || 0;
-                   const percentAchieved = targetRevenuePerWeek > 0 ? (revenue / targetRevenuePerWeek) * 100 : 0;
-                   const isMet = revenue >= targetRevenuePerWeek;
-                   return (
-                     <tr key={week} className="hover:bg-gray-50">
-                       <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{week}</td>
-                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">${revenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-slate-500">${targetRevenuePerWeek.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600">{percentAchieved.toFixed(1)}%</td>
-                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
-                         {isMet ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Cumplido</span> : <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">En Proceso</span>}
-                       </td>
-                     </tr>
-                   );
-                 })}
-               </tbody>
-             </table>
-           </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-6 page-break-avoid">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><Activity className="h-5 w-5 text-blue-600" /> Análisis de Cumplimiento Semanal ($ Meta vs $ Real)</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                <thead className="bg-blue-50">
+                  <tr><th className="px-6 py-3 text-left text-xs font-medium text-blue-800 uppercase tracking-wider">Semana</th><th className="px-6 py-3 text-right text-xs font-medium text-blue-800 uppercase tracking-wider">Recaudado ($)</th><th className="px-6 py-3 text-right text-xs font-medium text-blue-800 uppercase tracking-wider">Meta ($)</th><th className="px-6 py-3 text-right text-xs font-medium text-blue-800 uppercase tracking-wider">% Alcanzado</th><th className="px-6 py-3 text-center text-xs font-medium text-blue-800 uppercase tracking-wider">Estado</th></tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {weeks.map((week) => {
+                    const revenue = weeklyTotalRevenue[week] || 0;
+                    const percentAchieved = targetRevenuePerWeek > 0 ? (revenue / targetRevenuePerWeek) * 100 : 0;
+                    const isMet = revenue >= targetRevenuePerWeek;
+                    return (
+                      <tr key={week} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{week}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">${revenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-slate-500">${targetRevenuePerWeek.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600">{percentAchieved.toFixed(1)}%</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                          {isMet ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Cumplido</span> : <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">En Proceso</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
@@ -930,62 +959,58 @@ export default function CobranzasApp() {
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-6 page-break-avoid">
-           <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><TableIcon className="h-5 w-5 text-purple-600" /> Detalle Semanal de Clientes Gestionados (Casos)</h3>
-           <div className="overflow-x-auto">
-             <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
-               <thead className="bg-gray-50">
-                 <tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ejecutivo</th>{weeks.map(w => <th key={w} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{w}</th>)}<th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-gray-100">Total Unico</th></tr>
-               </thead>
-               <tbody className="bg-white divide-y divide-gray-200">
-                 {Object.keys(weeklyMatrix).map((exec) => (
-                   <tr key={exec} className="hover:bg-gray-50">
-                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{exec}</td>
-                     {weeks.map(w => (<td key={w} className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600">{weeklyMatrix[exec][w] > 0 ? <span className="inline-flex items-center justify-center px-2 py-1 rounded-full bg-blue-100 text-blue-800 font-bold text-xs">{weeklyMatrix[exec][w]}</span> : "-"}</td>))}
-                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-gray-900 bg-gray-50">{weeklyMatrix[exec].total}</td>
-                   </tr>
-                 ))}
-                 <tr className="bg-gray-100 border-t-2 border-gray-200">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><TableIcon className="h-5 w-5 text-purple-600" /> Detalle Semanal de Clientes Gestionados (Casos)</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                <thead className="bg-gray-50">
+                  <tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ejecutivo</th>{weeks.map(w => <th key={w} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{w}</th>)}<th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-gray-100">Total Unico</th></tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {Object.keys(weeklyMatrix).map((exec) => (
+                    <tr key={exec} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{exec}</td>
+                      {weeks.map(w => (<td key={w} className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600">{weeklyMatrix[exec][w] > 0 ? <span className="inline-flex items-center justify-center px-2 py-1 rounded-full bg-blue-100 text-blue-800 font-bold text-xs">{weeklyMatrix[exec][w]}</span> : "-"}</td>))}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-gray-900 bg-gray-50">{weeklyMatrix[exec].total}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-100 border-t-2 border-gray-200">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 uppercase">TOTALES</td>
                     {weeks.map(w => {
                         const totalWeek = Object.values(weeklyMatrix).reduce((acc, curr) => acc + (curr[w] || 0), 0);
                         return <td key={w} className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-gray-800">{totalWeek > 0 ? totalWeek : "-"}</td>;
                     })}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-black text-gray-900 bg-gray-200">{totalGestionados}</td>
-                 </tr>
-               </tbody>
-             </table>
-           </div>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-6 page-break-avoid">
-           <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><DollarSign className="h-5 w-5 text-emerald-600" /> Detalle Semanal de Recaudación ($)</h3>
-           <div className="overflow-x-auto">
-             <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
-               <thead className="bg-emerald-50">
-                 <tr><th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Ejecutivo</th>{weeks.map(w => <th key={w} className="px-6 py-3 text-center text-xs font-medium text-emerald-800 uppercase tracking-wider">{w}</th>)}<th className="px-6 py-3 text-center text-xs font-bold text-emerald-900 uppercase tracking-wider bg-emerald-100">Total Recaudado</th></tr>
-               </thead>
-               <tbody className="bg-white divide-y divide-gray-200">
-                 {Object.keys(weeklyRevenueMatrix).map((exec) => (
-                   <tr key={exec} className="hover:bg-gray-50">
-                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{exec}</td>
-                     {weeks.map(w => (<td key={w} className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600">{weeklyRevenueMatrix[exec][w] > 0 ? <span className="font-medium text-emerald-600">${weeklyRevenueMatrix[exec][w].toLocaleString()}</span> : "-"}</td>))}
-                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-emerald-700 bg-emerald-50">${weeklyRevenueMatrix[exec].total.toLocaleString()}</td>
-                   </tr>
-                 ))}
-               </tbody>
-             </table>
-           </div>
+            <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-6"><DollarSign className="h-5 w-5 text-emerald-600" /> Detalle Semanal de Recaudación ($)</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                <thead className="bg-emerald-50">
+                  <tr><th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Ejecutivo</th>{weeks.map(w => <th key={w} className="px-6 py-3 text-center text-xs font-medium text-emerald-800 uppercase tracking-wider">{w}</th>)}<th className="px-6 py-3 text-center text-xs font-bold text-emerald-900 uppercase tracking-wider bg-emerald-100">Total Recaudado</th></tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {Object.keys(weeklyRevenueMatrix).map((exec) => (
+                    <tr key={exec} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{exec}</td>
+                      {weeks.map(w => (<td key={w} className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600">{weeklyRevenueMatrix[exec][w] > 0 ? <span className="font-medium text-emerald-600">${weeklyRevenueMatrix[exec][w].toLocaleString()}</span> : "-"}</td>))}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-emerald-700 bg-emerald-50">${weeklyRevenueMatrix[exec].total.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
         </div>
       </div>
     );
   };
-  
-  // ... (renderClientList remains same)
-  // ... (renderAlertsView remains same)
+
   const renderClientList = () => {
-    // PROTECCIÓN CONTRA DATOS NULOS O INDEFINIDOS
     const filteredClients = mergedData.filter(client => {
-      // Safely access properties with optional chaining or fallback to empty string
       const clientName = client.cliente ? client.cliente.toLowerCase() : '';
       const clientId = client.id ? client.id.toString().toLowerCase() : '';
       const clientCedula = client.cedula ? client.cedula.toString() : '';
@@ -1020,9 +1045,9 @@ export default function CobranzasApp() {
             <button onClick={() => setView('alerts')} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-4 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors whitespace-nowrap" title="Ver todas las alertas"><Bell className="h-5 w-5" /> <span className="hidden sm:inline">Centro de Alertas</span></button>
             <button onClick={handleExportReport} className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-4 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors whitespace-nowrap" title="Descargar data en formato compatible con Excel"><Download className="h-5 w-5" /> <span className="hidden sm:inline">Exportar Data (Excel)</span></button>
             {baseData.length > 0 ? (
-               <button onClick={handleClearBase} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-4 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors whitespace-nowrap" title="Borrar base actual"><Trash2 className="h-5 w-5" /></button>
+                <button onClick={handleClearBase} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-4 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors whitespace-nowrap" title="Borrar base actual"><Trash2 className="h-5 w-5" /></button>
             ) : (
-               <button onClick={handleRestoreBase} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-4 py-4 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors whitespace-nowrap" title="Cargar datos de ejemplo"><RefreshCw className="h-5 w-5" /> Restaurar Base</button>
+                <button onClick={handleRestoreBase} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-4 py-4 rounded-xl font-medium shadow-sm flex items-center justify-center gap-2 transition-colors whitespace-nowrap" title="Cargar datos de ejemplo"><RefreshCw className="h-5 w-5" /> Restaurar Base</button>
             )}
             <div className="relative">
               <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
@@ -1052,7 +1077,7 @@ export default function CobranzasApp() {
                       {client.gestionado ? (
                         <div className="flex flex-col"><span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200 w-fit"><CheckCircle className="w-3 h-3 mr-1" /> Gestionado</span>{client.montoPagadoTotal > 0 && (<span className="text-[10px] text-emerald-600 mt-1 pl-1 font-medium">${client.montoPagadoTotal} Pagado</span>)}</div>
                       ) : (
-                         <div className="flex flex-col"><span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 w-fit"><Clock className="w-3 h-3 mr-1" /> Pendiente</span></div>
+                          <div className="flex flex-col"><span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 w-fit"><Clock className="w-3 h-3 mr-1" /> Pendiente</span></div>
                       )}
                       {client.alertStatus === 'overdue' && (<span className="mt-1 flex items-center gap-1 text-[10px] text-red-600 font-bold uppercase animate-pulse"><AlertCircle className="h-3 w-3" /> Compromiso Vencido</span>)}
                       {client.alertStatus === 'today' && (<span className="mt-1 flex items-center gap-1 text-[10px] text-orange-600 font-bold uppercase"><Bell className="h-3 w-3" /> Cobrar Hoy</span>)}
@@ -1064,8 +1089,8 @@ export default function CobranzasApp() {
                     <td className="px-6 py-4"><div className="flex items-center gap-2"><div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${client.ejecutivo === 'Miguel' ? 'bg-indigo-500' : client.ejecutivo === 'Gianella' ? 'bg-pink-500' : client.ejecutivo === 'Jordy' ? 'bg-cyan-500' : 'bg-orange-500'}`}>{(client.ejecutivo || '?').charAt(0)}</div><div className="flex flex-col"><span className="text-sm font-medium text-slate-700">{client.ejecutivo || 'Sin Asignar'}</span><span className="text-[10px] text-slate-400 uppercase">Responsable</span></div></div></td>
                     <td className="px-6 py-4"><button onClick={(e) => { e.stopPropagation(); handleClientSelect(client); }} className="text-white bg-blue-600 hover:bg-blue-700 font-medium text-xs px-3 py-2 rounded-lg shadow-sm hover:shadow flex items-center gap-1 transition-all group-hover:scale-105">Gestionar <ChevronRight className="h-3 w-3" /></button></td>
                   </tr>
-                ))
-               ) : (
+                  ))
+                ) : (
                   <tr>
                     <td colSpan="6" className="px-6 py-20 text-center">
                       <div className="flex flex-col items-center justify-center text-slate-400">
@@ -1078,7 +1103,7 @@ export default function CobranzasApp() {
                       </div>
                     </td>
                   </tr>
-               )}
+                )}
               </tbody>
             </table>
           </div>
@@ -1091,14 +1116,10 @@ export default function CobranzasApp() {
     );
   };
   
-  // ... (handleExportReport remains same)
-  // ... (handlePrintDashboard remains same)
-  
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-blue-100">
-      {/* ... (styles remain same) */}
+      <style>{`@media print { .no-print { display: none !important; } body { background: white; } nav { display: none !important; } * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } .page-break-avoid { page-break-inside: avoid; } }`}</style>
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm backdrop-blur-md bg-white/90 no-print">
-        {/* ... (nav content) */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center gap-3">
@@ -1115,6 +1136,15 @@ export default function CobranzasApp() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {isOffline && (
+           <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl flex items-center gap-3 no-print animate-fade-in-up">
+              <AlertCircle className="h-5 w-5" />
+              <div>
+                 <p className="font-bold text-sm">Modo Offline / Vista Previa</p>
+                 <p className="text-xs opacity-80">No se detectó la configuración de Firebase. Los cambios **NO se guardarán** en la nube. Por favor, configura tu proyecto de Firebase en Vercel para activar el guardado.</p>
+              </div>
+           </div>
+        )}
         {view === 'dashboard' && renderDashboard()}
         {view === 'list' && renderClientList()}
         {view === 'alerts' && renderAlertsView()}
