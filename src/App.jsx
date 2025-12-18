@@ -20,7 +20,7 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.6.0-PERFORMANCE-DASHBOARD";
+const APP_VERSION = "2.7.0-XLS-SUPPORT";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
 // ⚠️ Asegúrate de que estas credenciales sean las correctas de tu proyecto
@@ -331,14 +331,11 @@ export default function CobranzasApp() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    // --- LÓGICA CORREGIDA DE AUTENTICACIÓN PARA EVITAR PANTALLA DE CARGA INFINITA ---
     const initAuth = async () => {
       try {
-        // Intenta iniciar sesión (Anónimo por defecto si no hay token)
         await signInAnonymously(auth);
       } catch (e) {
         console.error("Auth error:", e);
-        // Si falla, quitamos la pantalla de carga para mostrar la app (quizás sin datos, pero visible)
         setLoading(false);
       }
     };
@@ -346,13 +343,11 @@ export default function CobranzasApp() {
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      // SIEMPRE quita el loading cuando Firebase responda, exista usuario o no
       setLoading(false); 
     });
     return () => unsubscribe();
   }, []);
 
-  // --- ESCUCHA DE DATOS FIREBASE ---
   useEffect(() => {
     if (!user) return;
     const collectionsPath = ['artifacts', appId, 'public', 'data'];
@@ -520,13 +515,79 @@ export default function CobranzasApp() {
     reader.readAsText(file);
   };
 
+  // --- NUEVA FUNCIÓN DE EXPORTACIÓN A EXCEL (.xls) ---
   const handleExportExcel = () => {
-    const headers = ["ID", "Cliente", "Ejecutivo", "Cuota", "Vencidas", "Recaudado", "Saldo", "Estado"];
-    const rows = mergedData.map(c => [c.id, c.cliente, c.ejecutivo, c.cuota, c.vencidasActuales, c.montoPagadoTotal, c.saldoActual, c.gestionado ? 'Gestionado' : 'Pendiente']);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
+    // 1. Crear el contenido de la tabla HTML
+    const tableRows = mergedData.map(c => `
+      <tr>
+        <td style="mso-number-format:'@'">${c.id}</td>
+        <td>${c.cliente}</td>
+        <td>${c.ejecutivo}</td>
+        <td style="mso-number-format:'0.00'">${c.cuota.toFixed(2)}</td>
+        <td>${c.vencidasActuales}</td>
+        <td style="mso-number-format:'0.00'">${c.montoPagadoTotal.toFixed(2)}</td>
+        <td style="mso-number-format:'0.00'">${c.saldoActual.toFixed(2)}</td>
+        <td>${c.gestionado ? 'Gestionado' : 'Pendiente'}</td>
+        <td>${c.commitmentDate || ''}</td>
+        <td>${(c.comentarios || []).map(com => `[${com.date.split('T')[0]}] ${com.text}`).join(' | ')}</td>
+      </tr>
+    `).join('');
+
+    const tableContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8">
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Reporte Consolidado</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayGridlines/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          body { font-family: Arial, sans-serif; font-size: 12px; }
+          table { border-collapse: collapse; width: 100%; }
+          th { background-color: #1f4e78; color: white; border: 1px solid #000; padding: 10px; font-weight: bold; text-align: center; }
+          td { border: 1px solid #ccc; padding: 5px; vertical-align: top; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>CLIENTE</th>
+              <th>EJECUTIVO</th>
+              <th>CUOTA ($)</th>
+              <th>VENCIDAS</th>
+              <th>RECAUDADO ($)</th>
+              <th>SALDO ($)</th>
+              <th>ESTADO</th>
+              <th>FECHA COMPROMISO</th>
+              <th>HISTORIAL GESTIÓN</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    // 2. Crear el Blob con el tipo MIME correcto para Excel
+    const blob = new Blob([tableContent], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodeURI(csvContent));
-    link.setAttribute("download", `Reporte_Consolidado.csv`);
+    link.href = url;
+    link.download = `Reporte_Gestion_${new Date().toISOString().split('T')[0]}.xls`; // Extensión .xls
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -802,9 +863,9 @@ export default function CobranzasApp() {
           </div>
           <div className="flex gap-2 w-full md:w-auto">
              <button onClick={() => setShowManualForm(true)} className="flex-1 bg-blue-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"><PlusCircle className="h-5 w-5" /> Nuevo</button>
-             <button onClick={handleExportExcel} className="flex-1 bg-slate-100 text-slate-700 px-6 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"><Download className="h-5 w-5" /> Reporte</button>
+             <button onClick={handleExportExcel} className="flex-1 bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"><Download className="h-5 w-5" /> Reporte Excel</button>
              <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-             <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"><Upload className="h-5 w-5" /> Subir Base</button>
+             <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-slate-100 text-slate-700 px-6 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"><Upload className="h-5 w-5" /> Subir Base</button>
           </div>
         </div>
 
