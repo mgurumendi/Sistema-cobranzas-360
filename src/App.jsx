@@ -23,16 +23,15 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 const APP_VERSION = "2.6.0-PERFORMANCE-DASHBOARD";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-  ? JSON.parse(__firebase_config) 
-  : {
-      apiKey: "AIzaSyDT2SAo30U7mYaEE8gfYubu7C4KWxlFDhM",
-      authDomain: "sistema-cobranzas-360.firebaseapp.com",
-      projectId: "sistema-cobranzas-360",
-      storageBucket: "sistema-cobranzas-360.firebasestorage.app",
-      messagingSenderId: "256307009098",
-      appId: "1:256307009098:web:fdb7c748e03a1c08a778b3"
-    };
+// ⚠️ Asegúrate de que estas credenciales sean las correctas de tu proyecto
+const firebaseConfig = {
+  apiKey: "AIzaSyDT2SAo30U7mYaEE8gfYubu7C4KWxlFDhM",
+  authDomain: "sistema-cobranzas-360.firebaseapp.com",
+  projectId: "sistema-cobranzas-360",
+  storageBucket: "sistema-cobranzas-360.firebasestorage.app",
+  messagingSenderId: "256307009098",
+  appId: "1:256307009098:web:fdb7c748e03a1c08a778b3"
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -332,25 +331,28 @@ export default function CobranzasApp() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
+    // --- LÓGICA CORREGIDA DE AUTENTICACIÓN PARA EVITAR PANTALLA DE CARGA INFINITA ---
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        // Intenta iniciar sesión (Anónimo por defecto si no hay token)
+        await signInAnonymously(auth);
       } catch (e) {
         console.error("Auth error:", e);
+        // Si falla, quitamos la pantalla de carga para mostrar la app (quizás sin datos, pero visible)
+        setLoading(false);
       }
     };
     initAuth();
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (u) setLoading(false);
+      // SIEMPRE quita el loading cuando Firebase responda, exista usuario o no
+      setLoading(false); 
     });
     return () => unsubscribe();
   }, []);
 
+  // --- ESCUCHA DE DATOS FIREBASE ---
   useEffect(() => {
     if (!user) return;
     const collectionsPath = ['artifacts', appId, 'public', 'data'];
