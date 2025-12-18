@@ -20,7 +20,7 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.9.8-EXCEL-SUPPORT";
+const APP_VERSION = "2.9.9-FIX-EXCEL-CUOTA";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
 // Configuración de Firebase: Usa la del entorno si existe, sino la proporcionada
@@ -624,7 +624,7 @@ export default function App() {
             id: getIdx(['ID', 'CODIGO', 'CÓDIGO']),
             cliente: getIdx(['CLIENTE', 'NOMBRE']),
             ejecutivo: getIdx(['EJECUTIVO', 'GESTOR']),
-            cuota: getIdx(['CUOTA']),
+            cuota: getIdx(['CUOTA', 'CUOTA MENSUAL', 'MENSUAL']),
             vencidas: getIdx(['VENCIDAS']),
             saldo: getIdx(['SALDO']),
             celular: getIdx(['CELULAR']),
@@ -636,8 +636,16 @@ export default function App() {
 
          return dataRows.map((row, i) => {
              const getVal = (i) => i !== -1 && row[i] !== undefined ? row[i] : '';
-             // Ensure numeric values are parsed correctly
-             const parseNum = (val) => typeof val === 'number' ? val : (parseFloat(val) || 0);
+             
+             // Mejorada: Función segura para limpiar y parsear números con formato de moneda (ej: "$ 1,200.00")
+             const parseNum = (val) => {
+                 if (typeof val === 'number') return val;
+                 if (!val) return 0;
+                 // Elimina todo excepto números, puntos y signo menos.
+                 // Esto arregla el problema de "$ 250.00" siendo leído como NaN
+                 const clean = String(val).replace(/[^0-9.-]/g, ''); 
+                 return parseFloat(clean) || 0;
+             };
 
              return {
                  id: idx.id !== -1 ? String(getVal(idx.id)) : `R-${i}`,
