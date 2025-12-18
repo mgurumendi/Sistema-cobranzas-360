@@ -20,9 +20,10 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.9.7-FIX-SAVE-ERROR";
+const APP_VERSION = "2.9.8-EXCEL-SUPPORT";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
+// Configuración de Firebase: Usa la del entorno si existe, sino la proporcionada
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
@@ -37,6 +38,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+// Usar __app_id del entorno si está disponible para aislar datos en el editor
 const appId = typeof __app_id !== 'undefined' ? __app_id : DEFAULT_APP_ID;
 
 const KPI_META_ESTATICA = {
@@ -412,7 +414,7 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
 };
 
 // --- MAIN COMPONENT ---
-export default function CobranzasApp() {
+export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard'); 
@@ -429,6 +431,19 @@ export default function CobranzasApp() {
   const [weeksConfig, setWeeksConfig] = useState(5);
 
   const fileInputRef = useRef(null);
+
+  // Load XLSX library via CDN
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -600,15 +615,12 @@ export default function CobranzasApp() {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const text = evt.target.result;
-        const rows = text.split(/\r?\n/);
-        const headers = rows[0].split(',').map(h => h.trim().toUpperCase().replace(/"/g, ''));
-        const getIdx = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
-        
-        const idx = {
+
+    // Helper para procesar headers y filas de datos
+    const processData = (headers, dataRows) => {
+         const getIdx = (keywords) => headers.findIndex(h => keywords.some(k => h && String(h).toUpperCase().includes(k)));
+         
+         const idx = {
             id: getIdx(['ID', 'CODIGO', 'CÓDIGO']),
             cliente: getIdx(['CLIENTE', 'NOMBRE']),
             ejecutivo: getIdx(['EJECUTIVO', 'GESTOR']),
@@ -620,35 +632,91 @@ export default function CobranzasApp() {
             grupo: getIdx(['GRUPO']),
             ciudad: getIdx(['CIUDAD']),
             puesto: getIdx(['PUESTO'])
-        };
+         };
 
-        const parsed = rows.slice(1).map((row, i) => {
-          if (!row.trim()) return null;
-          const cols = row.split(',').map(c => c.trim().replace(/"/g, ''));
-          return {
-            id: idx.id !== -1 ? cols[idx.id] : `R-${i}`,
-            cliente: idx.cliente !== -1 ? cols[idx.cliente] : 'S/N',
-            ejecutivo: idx.ejecutivo !== -1 ? cols[idx.ejecutivo] : 'Sin Asignar',
-            cuota: idx.cuota !== -1 ? parseFloat(cols[idx.cuota]) || 0 : 0,
-            vencidas: idx.vencidas !== -1 ? parseInt(cols[idx.vencidas]) || 0 : 0,
-            saldo: idx.saldo !== -1 ? parseFloat(cols[idx.saldo]) || 0 : 0,
-            celular: idx.celular !== -1 ? cols[idx.celular] : '',
-            cedula: idx.cedula !== -1 ? cols[idx.cedula] : '',
-            grupo: idx.grupo !== -1 ? cols[idx.grupo] : 'GEN',
-            ciudad: idx.ciudad !== -1 ? cols[idx.ciudad] : 'S/I',
-            puesto: idx.puesto !== -1 ? cols[idx.puesto] : '0'
-          };
-        }).filter(Boolean);
+         return dataRows.map((row, i) => {
+             const getVal = (i) => i !== -1 && row[i] !== undefined ? row[i] : '';
+             // Ensure numeric values are parsed correctly
+             const parseNum = (val) => typeof val === 'number' ? val : (parseFloat(val) || 0);
 
-        if (parsed.length > 0) {
-          setBaseData(parsed);
-          showNotify(`Base cargada: ${parsed.length} registros`);
-        }
-      } catch (err) {
-        showNotify("Error de formato en CSV", "error");
-      }
+             return {
+                 id: idx.id !== -1 ? String(getVal(idx.id)) : `R-${i}`,
+                 cliente: idx.cliente !== -1 ? String(getVal(idx.cliente)).toUpperCase() : 'S/N',
+                 ejecutivo: idx.ejecutivo !== -1 ? String(getVal(idx.ejecutivo)) : 'Sin Asignar',
+                 cuota: idx.cuota !== -1 ? parseNum(getVal(idx.cuota)) : 0,
+                 vencidas: idx.vencidas !== -1 ? (typeof getVal(idx.vencidas) === 'number' ? getVal(idx.vencidas) : parseInt(getVal(idx.vencidas)) || 0) : 0,
+                 saldo: idx.saldo !== -1 ? parseNum(getVal(idx.saldo)) : 0,
+                 celular: idx.celular !== -1 ? String(getVal(idx.celular)) : '',
+                 cedula: idx.cedula !== -1 ? String(getVal(idx.cedula)) : '',
+                 grupo: idx.grupo !== -1 ? String(getVal(idx.grupo)) : 'GEN',
+                 ciudad: idx.ciudad !== -1 ? String(getVal(idx.ciudad)) : 'S/I',
+                 puesto: idx.puesto !== -1 ? String(getVal(idx.puesto)) : '0'
+             };
+         }).filter(Boolean);
     };
-    reader.readAsText(file);
+
+    if (file.name.endsWith('.csv')) {
+        // Lógica CSV Existente
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+             try {
+                const text = evt.target.result;
+                const lines = text.split(/\r?\n/).filter(line => line.trim());
+                if (lines.length < 1) return;
+                
+                const headers = lines[0].split(',').map(h => h.trim().toUpperCase().replace(/"/g, ''));
+                const dataRows = lines.slice(1).map(line => line.split(',').map(c => c.trim().replace(/"/g, '')));
+                
+                const parsed = processData(headers, dataRows);
+                if (parsed.length > 0) {
+                    setBaseData(parsed);
+                    showNotify(`Base CSV cargada: ${parsed.length} registros`);
+                }
+             } catch (err) {
+                showNotify("Error de formato en CSV", "error");
+             }
+        };
+        reader.readAsText(file);
+    } else if (file.name.match(/\.(xls|xlsx)$/)) {
+        // Lógica Excel (.xls, .xlsx) usando SheetJS
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                if (!window.XLSX) {
+                    showNotify("La librería Excel se está cargando... intente en 5 segundos.", "error");
+                    return;
+                }
+                const data = evt.target.result;
+                const workbook = window.XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 }); // Array de arrays
+
+                if (jsonData.length === 0) {
+                     showNotify("El archivo Excel está vacío", "error");
+                     return;
+                }
+
+                const headers = jsonData[0].map(h => String(h).trim().toUpperCase());
+                const dataRows = jsonData.slice(1);
+                
+                const parsed = processData(headers, dataRows);
+                 if (parsed.length > 0) {
+                     setBaseData(parsed);
+                     showNotify(`Base Excel cargada: ${parsed.length} registros`);
+                 } else {
+                     showNotify("No se encontraron registros válidos en el Excel", "error");
+                 }
+
+            } catch(e) {
+                console.error(e);
+                showNotify("Error al procesar el archivo Excel. Verifique el formato.", "error");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } else {
+        showNotify("Formato no soportado. Use .csv, .xls o .xlsx", "error");
+    }
   };
 
   const handleExportExcel = () => {
@@ -1003,7 +1071,7 @@ export default function CobranzasApp() {
           <div className="flex gap-2 w-full md:w-auto">
              <button onClick={() => setShowManualForm(true)} className="flex-1 bg-blue-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"><PlusCircle className="h-5 w-5" /> Nuevo</button>
              <button onClick={handleExportExcel} className="flex-1 bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"><Download className="h-5 w-5" /> Reporte Excel</button>
-             <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+             <input type="file" accept=".csv, .xls, .xlsx" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
              <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-slate-100 text-slate-700 px-6 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"><Upload className="h-5 w-5" /> Subir Base</button>
              {baseData.length > 0 && (
                 <button onClick={handleClearBaseClick} className="flex-1 bg-red-100 text-red-600 px-6 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-red-200 transition-all"><Trash2 className="h-5 w-5" /> Borrar Base</button>
