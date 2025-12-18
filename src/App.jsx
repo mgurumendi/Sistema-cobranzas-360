@@ -20,7 +20,7 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.9.6-FINANCING-KPI";
+const APP_VERSION = "2.9.7-FIX-SAVE-ERROR";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
@@ -48,14 +48,14 @@ const KPI_META_ESTATICA = {
 
 const Notification = ({ message, type, onClose }) => {
   useEffect(() => {
-    const timer = setTimeout(onClose, 5000);
+    const timer = setTimeout(onClose, 6000); // 6 segundos para leer errores
     return () => clearTimeout(timer);
   }, [onClose]);
 
   const bg = type === 'error' ? 'bg-red-600' : type === 'success' ? 'bg-emerald-600' : 'bg-blue-600';
 
   return (
-    <div className={`fixed bottom-6 right-6 ${bg} text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 z-[100] animate-fade-in-up border border-white/10`}>
+    <div className={`fixed bottom-6 right-6 ${bg} text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 z-[150] animate-fade-in-up border border-white/10`}>
       {type === 'error' ? <AlertCircle className="h-5 w-5" /> : <CheckCircle className="h-5 w-5" />}
       <span className="font-medium text-sm">{message}</span>
       <button onClick={onClose} className="ml-2 hover:bg-white/20 rounded-full p-1"><X className="h-4 w-4" /></button>
@@ -111,8 +111,9 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
     e.preventDefault();
     setLoading(true);
     
+    // Validación de campos obligatorios
     if (!formData.cliente || !formData.monto || !formData.meses || !formData.fechaVencimiento) {
-        showNotify("⚠️ Campos obligatorios faltantes: Nombre, Monto, Meses o Fecha.", "error");
+        showNotify("⚠️ Falta información obligatoria: Nombre, Monto, Meses o Fecha.", "error");
         setLoading(false);
         return;
     }
@@ -120,43 +121,48 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
     const montoVal = parseFloat(formData.monto);
     const mesesVal = parseInt(formData.meses);
 
+    // Validación numérica
     if (isNaN(montoVal) || isNaN(mesesVal) || mesesVal <= 0) {
-        showNotify("⚠️ El Monto y los Meses deben ser valores numéricos válidos.", "error");
+        showNotify("⚠️ El Monto y los Meses deben ser números válidos mayores a 0.", "error");
         setLoading(false);
         return;
     }
 
     const cuotaVal = montoVal / mesesVal;
 
-    let diaPago = '';
+    // Extracción segura del día de pago
+    let diaPago = '05'; // Valor por defecto seguro
     if (formData.fechaVencimiento) {
         const parts = formData.fechaVencimiento.split('-');
         if (parts.length === 3) diaPago = parts[2];
     }
 
-    const success = await onSave({
-      cliente: formData.cliente,
-      cedula: formData.cedula,
-      celular: formData.celular,
-      ejecutivo: formData.ejecutivo,
+    // Construcción de objeto seguro (Sanitización)
+    const secureData = {
+      cliente: formData.cliente || 'Sin Nombre',
+      cedula: formData.cedula || '',
+      celular: formData.celular || '',
+      ejecutivo: formData.ejecutivo || 'Sin Asignar',
       grupo: 'FINANCIAMIENTO',
       ciudad: 'S/I',
-      cuota: cuotaVal,
-      saldo: montoVal,
+      cuota: Number(cuotaVal.toFixed(2)), // Asegurar número con 2 decimales
+      saldo: Number(montoVal.toFixed(2)),
       vencidas: 0,
-      producto: formData.producto,
-      montoTotal: montoVal,
-      plazoMeses: mesesVal,
+      producto: formData.producto || 'Varios',
+      montoTotal: Number(montoVal.toFixed(2)),
+      plazoMeses: Number(mesesVal),
       fechaInicio: formData.fechaVencimiento,
       diaPago: diaPago,
       manualType: 'Financiamiento'
-    });
+    };
+
+    const success = await onSave(secureData);
 
     if (!success) setLoading(false);
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up border border-slate-200">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-6 flex justify-between items-center text-white">
           <div>
@@ -557,11 +563,15 @@ export default function CobranzasApp() {
     }
 
     const newId = `M-${Date.now()}`;
+    // Usamos el ID de la app correctamente en la ruta
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manuales_v2', newId);
     
     try {
+      // Nos aseguramos de que el objeto data esté limpio (sin undefined)
+      const cleanData = JSON.parse(JSON.stringify(data));
+      
       await setDoc(docRef, { 
-          ...data, 
+          ...cleanData, 
           id: newId, 
           isManual: true, 
           createdAt: serverTimestamp(), 
@@ -571,8 +581,8 @@ export default function CobranzasApp() {
       showNotify("Cliente de financiamiento creado exitosamente");
       return true;
     } catch (e) { 
-        console.error("Error saving:", e);
-        showNotify("Error al guardar en base de datos. Verifique su conexión.", "error"); 
+        console.error("Error saving manual client:", e);
+        showNotify(`Error al guardar: ${e.message}`, "error"); 
         return false;
     }
   };
