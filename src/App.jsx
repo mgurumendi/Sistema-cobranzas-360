@@ -10,7 +10,7 @@ import {
   Briefcase, Clock, Calculator, PlusCircle, MinusCircle, ClipboardList, 
   Upload, FileSpreadsheet, Trash2, Download, Printer, BarChart2, 
   Table as TableIcon, Settings, Bell, Calendar as CalendarIcon, 
-  ListFilter, RefreshCw, UserPlus, X, Info, TrendingDown, Wallet, Target
+  ListFilter, RefreshCw, UserPlus, X, Info, TrendingDown, Wallet, Target, AlertTriangle
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -20,18 +20,19 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.7.0-XLS-SUPPORT";
+const APP_VERSION = "2.9.6-FINANCING-KPI";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
-// ⚠️ Asegúrate de que estas credenciales sean las correctas de tu proyecto
-const firebaseConfig = {
-  apiKey: "AIzaSyDT2SAo30U7mYaEE8gfYubu7C4KWxlFDhM",
-  authDomain: "sistema-cobranzas-360.firebaseapp.com",
-  projectId: "sistema-cobranzas-360",
-  storageBucket: "sistema-cobranzas-360.firebasestorage.app",
-  messagingSenderId: "256307009098",
-  appId: "1:256307009098:web:fdb7c748e03a1c08a778b3"
-};
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : {
+      apiKey: "AIzaSyDT2SAo30U7mYaEE8gfYubu7C4KWxlFDhM",
+      authDomain: "sistema-cobranzas-360.firebaseapp.com",
+      projectId: "sistema-cobranzas-360",
+      storageBucket: "sistema-cobranzas-360.firebasestorage.app",
+      messagingSenderId: "256307009098",
+      appId: "1:256307009098:web:fdb7c748e03a1c08a778b3"
+    };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -47,7 +48,7 @@ const KPI_META_ESTATICA = {
 
 const Notification = ({ message, type, onClose }) => {
   useEffect(() => {
-    const timer = setTimeout(onClose, 4000);
+    const timer = setTimeout(onClose, 5000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
@@ -56,8 +57,29 @@ const Notification = ({ message, type, onClose }) => {
   return (
     <div className={`fixed bottom-6 right-6 ${bg} text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 z-[100] animate-fade-in-up border border-white/10`}>
       {type === 'error' ? <AlertCircle className="h-5 w-5" /> : <CheckCircle className="h-5 w-5" />}
-      <span className="font-medium">{message}</span>
+      <span className="font-medium text-sm">{message}</span>
       <button onClick={onClose} className="ml-2 hover:bg-white/20 rounded-full p-1"><X className="h-4 w-4" /></button>
+    </div>
+  );
+};
+
+const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-fade-in-up border border-slate-200">
+        <div className="p-6 text-center">
+          <div className="mx-auto w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mb-4">
+            <AlertTriangle className="h-7 w-7 text-red-600" />
+          </div>
+          <h3 className="text-xl font-black text-slate-800 mb-2">{title}</h3>
+          <p className="text-sm text-slate-500 mb-6 font-medium leading-relaxed">{message}</p>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 px-4 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-all">Cancelar</button>
+            <button onClick={onConfirm} className="flex-1 px-4 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-200 transition-all">Sí, Borrar</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -72,71 +94,140 @@ const SkeletonLoader = () => (
   </div>
 );
 
-const ManualClientForm = ({ onClose, onSave }) => {
+const ManualClientForm = ({ onClose, onSave, showNotify }) => {
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    cliente: '', cedula: '', celular: '', ejecutivo: 'Gianella',
-    cuota: '', manualType: 'Seguro', manualDesc: ''
+    cliente: '', 
+    cedula: '', 
+    celular: '', 
+    ejecutivo: 'Gianella',
+    producto: 'Rastreo',
+    monto: '',
+    meses: '',
+    fechaVencimiento: ''
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.cliente || !formData.cuota) return;
-    onSave({
-      ...formData,
-      cuota: parseFloat(formData.cuota),
-      grupo: 'MANUAL',
-      ciudad: 'POR DEFINIR'
+    setLoading(true);
+    
+    if (!formData.cliente || !formData.monto || !formData.meses || !formData.fechaVencimiento) {
+        showNotify("⚠️ Campos obligatorios faltantes: Nombre, Monto, Meses o Fecha.", "error");
+        setLoading(false);
+        return;
+    }
+    
+    const montoVal = parseFloat(formData.monto);
+    const mesesVal = parseInt(formData.meses);
+
+    if (isNaN(montoVal) || isNaN(mesesVal) || mesesVal <= 0) {
+        showNotify("⚠️ El Monto y los Meses deben ser valores numéricos válidos.", "error");
+        setLoading(false);
+        return;
+    }
+
+    const cuotaVal = montoVal / mesesVal;
+
+    let diaPago = '';
+    if (formData.fechaVencimiento) {
+        const parts = formData.fechaVencimiento.split('-');
+        if (parts.length === 3) diaPago = parts[2];
+    }
+
+    const success = await onSave({
+      cliente: formData.cliente,
+      cedula: formData.cedula,
+      celular: formData.celular,
+      ejecutivo: formData.ejecutivo,
+      grupo: 'FINANCIAMIENTO',
+      ciudad: 'S/I',
+      cuota: cuotaVal,
+      saldo: montoVal,
+      vencidas: 0,
+      producto: formData.producto,
+      montoTotal: montoVal,
+      plazoMeses: mesesVal,
+      fechaInicio: formData.fechaVencimiento,
+      diaPago: diaPago,
+      manualType: 'Financiamiento'
     });
+
+    if (!success) setLoading(false);
   };
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up border border-slate-200">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up border border-slate-200">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-6 flex justify-between items-center text-white">
           <div>
-            <h3 className="text-xl font-bold flex items-center gap-2"><UserPlus className="h-6 w-6" /> Registro Manual</h3>
-            <p className="text-blue-100 text-xs mt-1">Alta de servicios adicionales</p>
+            <h3 className="text-xl font-bold flex items-center gap-2"><Wallet className="h-6 w-6" /> Nuevo Financiamiento</h3>
+            <p className="text-blue-100 text-xs mt-1">Registro manual de contrato</p>
           </div>
           <button onClick={onClose} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X className="h-6 w-6" /></button>
         </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-5">
+        <form onSubmit={handleSubmit} className="p-8 space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Nombre Completo</label>
+            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Nombres Completos *</label>
             <input required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 uppercase ml-1">ID / Cédula</label>
+              <label className="text-xs font-bold text-slate-500 uppercase ml-1">Número de Cédula</label>
               <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.cedula} onChange={e => setFormData({...formData, cedula: e.target.value})} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 uppercase ml-1">Celular</label>
+              <label className="text-xs font-bold text-slate-500 uppercase ml-1">Teléfono</label>
               <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.celular} onChange={e => setFormData({...formData, celular: e.target.value})} />
             </div>
           </div>
+          
           <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Ejecutivo</label>
+                <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.ejecutivo} onChange={e => setFormData({...formData, ejecutivo: e.target.value})}>
+                    {["Gianella", "Fabiola", "Jordy", "Miguel"].map(e => <option key={e}>{e}</option>)}
+                </select>
+             </div>
+             <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Producto</label>
+                <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-medium" value={formData.producto} onChange={e => setFormData({...formData, producto: e.target.value})}>
+                    <option>Rastreo</option>
+                    <option>Seguro</option>
+                    <option>Entrada del vehiculo</option>
+                    <option>Seguro y Rastreo</option>
+                    <option>Triple (Seguro, Rastreo y Entrada)</option>
+                </select>
+             </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 uppercase ml-1">Ejecutivo</label>
-              <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.ejecutivo} onChange={e => setFormData({...formData, ejecutivo: e.target.value})}>
-                {["Gianella", "Fabiola", "Jordy", "Miguel"].map(e => <option key={e}>{e}</option>)}
-              </select>
+              <label className="text-[10px] font-black text-slate-400 uppercase">Monto Total *</label>
+              <input type="number" step="0.01" required className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.monto} onChange={e => setFormData({...formData, monto: e.target.value})} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 uppercase ml-1">Cuota ($)</label>
-              <input type="number" step="0.01" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.cuota} onChange={e => setFormData({...formData, cuota: e.target.value})} />
+              <label className="text-[10px] font-black text-slate-400 uppercase">Meses Plazo *</label>
+              <input type="number" required className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.meses} onChange={e => setFormData({...formData, meses: e.target.value})} />
+            </div>
+            <div className="space-y-1">
+               <label className="text-[10px] font-black text-slate-400 uppercase">Cuota Mensual</label>
+               <div className="w-full p-2 font-black text-emerald-600 text-sm pt-3">
+                 ${(formData.monto && formData.meses && formData.meses > 0) ? (parseFloat(formData.monto) / parseInt(formData.meses)).toFixed(2) : '0.00'}
+               </div>
             </div>
           </div>
+
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Tipo de Servicio</label>
-            <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.manualType} onChange={e => setFormData({...formData, manualType: e.target.value})}>
-              <option>Seguro</option>
-              <option>Rastreo Vehicular</option>
-              <option>Otro</option>
-            </select>
+            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Fecha de Inicio / Vencimiento *</label>
+            <input type="date" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.fechaVencimiento} onChange={e => setFormData({...formData, fechaVencimiento: e.target.value})} />
+            <p className="text-[10px] text-slate-400 pl-1 italic">El día seleccionado será la fecha máxima de pago mensual.</p>
           </div>
+
           <div className="pt-4 flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cerrar</button>
-            <button type="submit" className="flex-[2] bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all">Guardar Registro</button>
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+            <button type="submit" disabled={loading} className="flex-[2] bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all flex justify-center items-center gap-2">
+                {loading ? 'Guardando...' : 'Registrar Financiamiento'}
+            </button>
           </div>
         </form>
       </div>
@@ -187,13 +278,15 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${client.pagado ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
                      {client.pagado ? 'Gestionado' : 'Pendiente'}
                    </span>
-                   {client.isManual && <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-purple-100 text-purple-700 border-purple-200">Manual</span>}
+                   {client.isManual && <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-purple-100 text-purple-700 border-purple-200">Financiamiento</span>}
                 </div>
                 <h1 className="text-3xl font-black text-slate-800 leading-tight">{client.cliente}</h1>
                 <div className="flex flex-wrap items-center gap-4 mt-3 text-slate-500">
                   <span className="flex items-center gap-1.5 text-sm font-medium bg-white px-3 py-1 rounded-lg border border-slate-100 shadow-sm"><CreditCard className="h-4 w-4" /> {client.cedula || 'SIN ID'}</span>
                   <span className="flex items-center gap-1.5 text-sm font-medium bg-white px-3 py-1 rounded-lg border border-slate-100 shadow-sm"><Users className="h-4 w-4" /> {client.ejecutivo}</span>
+                  {client.diaPago && <span className="flex items-center gap-1.5 text-sm font-medium bg-purple-50 text-purple-700 px-3 py-1 rounded-lg border border-purple-100 shadow-sm"><Calendar className="h-4 w-4" /> Día de Pago: {client.diaPago}</span>}
                 </div>
+                {client.producto && <p className="mt-2 text-xs font-bold text-slate-400 uppercase tracking-widest">Producto: {client.producto}</p>}
               </div>
               <div className="bg-blue-600 p-6 rounded-3xl text-white shadow-xl shadow-blue-200">
                 <p className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-1">Cuota Mensual</p>
@@ -212,7 +305,7 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
                     <p className="text-3xl font-black text-emerald-600">${(client.montoPagadoTotal || 0).toLocaleString()}</p>
                   </div>
                   <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 text-center">
-                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Capital Restante</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Saldo / Capital</p>
                     <p className="text-3xl font-black text-slate-800">${(client.saldoActual || 0).toLocaleString()}</p>
                   </div>
                </div>
@@ -222,7 +315,7 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden no-print">
             <div className="px-8 py-6 bg-emerald-50/50 border-b border-emerald-100 flex items-center gap-3">
               <div className="bg-emerald-600 p-2 rounded-xl text-white"><DollarSign className="h-5 w-5" /></div>
-              <h3 className="text-lg font-black text-slate-800">Módulo de Cobranza Directa</h3>
+              <h3 className="text-lg font-black text-slate-800">Módulo de Recaudación</h3>
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-10">
               <div className="space-y-4">
@@ -325,6 +418,7 @@ export default function CobranzasApp() {
   const [filterExecutive, setFilterExecutive] = useState('Todos');
   const [filterAlertType, setFilterAlertType] = useState('all');
   const [showManualForm, setShowManualForm] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false); // Estado para el modal de borrado
   const [notification, setNotification] = useState(null);
   const [weeksConfig, setWeeksConfig] = useState(5);
 
@@ -333,7 +427,11 @@ export default function CobranzasApp() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        await signInAnonymously(auth);
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
       } catch (e) {
         console.error("Auth error:", e);
         setLoading(false);
@@ -373,8 +471,8 @@ export default function CobranzasApp() {
 
   const mergedData = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const source = baseData.length > 0 ? baseData : INITIAL_BASE_DATA;
-    const combined = [...source, ...manualClients];
+    const source = baseData; // Base importada
+    const combined = [...source, ...manualClients]; // Combinar con manuales
 
     return combined.map(client => {
       if (!client) return null;
@@ -416,6 +514,17 @@ export default function CobranzasApp() {
     return mergedData.find(c => c.id === selectedClientId) || null;
   }, [mergedData, selectedClientId]);
 
+  // --- LÓGICA DE BORRADO CON MODAL ---
+  const handleClearBaseClick = () => {
+    setShowClearConfirm(true); // Abre el modal
+  };
+
+  const confirmClearBase = () => {
+    setBaseData([]); // Borra solo los datos del CSV local
+    setShowClearConfirm(false); // Cierra el modal
+    showNotify("Base de datos importada eliminada correctamente. Registros manuales conservados.", "success");
+  };
+
   const handleSavePayment = async (clientId, numCuotas, abono) => {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_live_v2', clientId);
     try {
@@ -442,13 +551,30 @@ export default function CobranzasApp() {
   };
 
   const handleSaveManualClient = async (data) => {
+    if (!user) {
+        showNotify("Error: Usuario no autenticado. Recargue la página.", "error");
+        return false;
+    }
+
     const newId = `M-${Date.now()}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manuales_v2', newId);
+    
     try {
-      await setDoc(docRef, { ...data, id: newId, isManual: true, createdAt: serverTimestamp(), vencidas: 0, saldo: data.cuota });
+      await setDoc(docRef, { 
+          ...data, 
+          id: newId, 
+          isManual: true, 
+          createdAt: serverTimestamp(), 
+          updatedAt: serverTimestamp() 
+      });
       setShowManualForm(false);
-      showNotify("Nuevo cliente manual creado");
-    } catch (e) { showNotify("Error al crear", "error"); }
+      showNotify("Cliente de financiamiento creado exitosamente");
+      return true;
+    } catch (e) { 
+        console.error("Error saving:", e);
+        showNotify("Error al guardar en base de datos. Verifique su conexión.", "error"); 
+        return false;
+    }
   };
 
   const handleDeleteManualClient = async (id) => {
@@ -515,9 +641,7 @@ export default function CobranzasApp() {
     reader.readAsText(file);
   };
 
-  // --- NUEVA FUNCIÓN DE EXPORTACIÓN A EXCEL (.xls) ---
   const handleExportExcel = () => {
-    // 1. Crear el contenido de la tabla HTML
     const tableRows = mergedData.map(c => `
       <tr>
         <td style="mso-number-format:'@'">${c.id}</td>
@@ -537,20 +661,6 @@ export default function CobranzasApp() {
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
       <head>
         <meta charset="UTF-8">
-        <!--[if gte mso 9]>
-        <xml>
-          <x:ExcelWorkbook>
-            <x:ExcelWorksheets>
-              <x:ExcelWorksheet>
-                <x:Name>Reporte Consolidado</x:Name>
-                <x:WorksheetOptions>
-                  <x:DisplayGridlines/>
-                </x:WorksheetOptions>
-              </x:ExcelWorksheet>
-            </x:ExcelWorksheets>
-          </x:ExcelWorkbook>
-        </xml>
-        <![endif]-->
         <style>
           body { font-family: Arial, sans-serif; font-size: 12px; }
           table { border-collapse: collapse; width: 100%; }
@@ -582,7 +692,6 @@ export default function CobranzasApp() {
       </html>
     `;
 
-    // 2. Crear el Blob con el tipo MIME correcto para Excel
     const blob = new Blob([tableContent], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -599,6 +708,11 @@ export default function CobranzasApp() {
     const totalRecaudado = mergedData.reduce((acc, curr) => acc + curr.montoPagadoTotal, 0);
     const totalVencidoPorCobrar = mergedData.reduce((acc, curr) => acc + (curr.cuota * curr.vencidasActuales), 0);
     
+    // KPI NUEVO: Total Financiamiento
+    const totalFinanciamiento = mergedData
+      .filter(c => c.isManual)
+      .reduce((acc, curr) => acc + (curr.saldoActual || 0), 0);
+
     // Lista de ejecutivos solicitada
     const targetExecutives = ["Gianella", "Fabiola", "Jordy", "Miguel"];
     const weeks = Array.from({length: weeksConfig}, (_, i) => `Semana ${i + 1}`);
@@ -692,7 +806,7 @@ export default function CobranzasApp() {
                   </button>
                 </div>
              </div>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="bg-white/5 border border-white/10 p-6 rounded-[2rem] hover:bg-white/10 transition-colors">
                   <p className="text-xs font-bold text-blue-200/50 uppercase mb-1">Recaudado (Efectivo)</p>
                   <p className="text-3xl font-black text-emerald-400">${totalRecaudado.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
@@ -701,6 +815,13 @@ export default function CobranzasApp() {
                   <p className="text-xs font-bold text-blue-300 uppercase mb-1">Total por Recaudar (Vencido)</p>
                   <p className="text-3xl font-black text-white">${totalVencidoPorCobrar.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                 </div>
+                
+                {/* NUEVO KPI: Cartera Financiamiento */}
+                <div className="bg-white/10 border border-purple-400/30 p-6 rounded-[2rem] shadow-xl shadow-purple-500/10 ring-1 ring-white/10">
+                  <p className="text-xs font-bold text-purple-200 uppercase mb-1">Cartera Financiamiento</p>
+                  <p className="text-3xl font-black text-white">${totalFinanciamiento.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                </div>
+
                 <div className="bg-white/5 border border-white/10 p-6 rounded-[2rem] hover:bg-white/10 transition-colors">
                   <p className="text-xs font-bold text-blue-200/50 uppercase mb-1">Meta Alcanzada</p>
                   <p className="text-3xl font-black">{((totalRecaudado / KPI_META_ESTATICA.mensual) * 100).toFixed(1)}%</p>
@@ -848,10 +969,18 @@ export default function CobranzasApp() {
   };
 
   const renderClientList = () => {
+    // Si la vista es 'financing', solo mostramos clientes manuales
+    const isFinancingView = view === 'financing';
+    
     const filtered = mergedData.filter(c => {
+      // Filtro de Vista (Tag)
+      if (isFinancingView && !c.isManual) return false;
+      if (!isFinancingView && view === 'list' && c.isManual) return false; // En cartera normal no mostramos manuales (opcional, según preferencia)
+      
+      // Filtro de Buscador
       const matchSearch = c.cliente.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchExec = filterExecutive === 'Todos' || c.ejecutivo === filterExecutive;
-      return matchSearch && matchExec;
+      
+      return matchSearch;
     });
 
     return (
@@ -866,6 +995,9 @@ export default function CobranzasApp() {
              <button onClick={handleExportExcel} className="flex-1 bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"><Download className="h-5 w-5" /> Reporte Excel</button>
              <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
              <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-slate-100 text-slate-700 px-6 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"><Upload className="h-5 w-5" /> Subir Base</button>
+             {baseData.length > 0 && (
+                <button onClick={handleClearBaseClick} className="flex-1 bg-red-100 text-red-600 px-6 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-red-200 transition-all"><Trash2 className="h-5 w-5" /> Borrar Base</button>
+             )}
           </div>
         </div>
 
@@ -898,6 +1030,7 @@ export default function CobranzasApp() {
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[9px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{c.id}</span>
                         <span className="text-[9px] font-bold text-slate-400 uppercase">{c.ejecutivo}</span>
+                        {c.isManual && <span className="text-[9px] font-black bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded uppercase">MANUAL</span>}
                       </div>
                     </td>
                     <td className="px-6 py-5 text-right font-black text-slate-700">${(c.cuota || 0).toFixed(2)}</td>
@@ -974,6 +1107,7 @@ export default function CobranzasApp() {
              {[
                {id: 'dashboard', icon: Activity, label: 'Dashboard'},
                {id: 'list', icon: Users, label: 'Cartera'},
+               {id: 'financing', icon: Wallet, label: 'Financiamiento'}, // NUEVO TAG
                {id: 'alerts', icon: Bell, label: 'Alertas'}
              ].map(item => (
                <button key={item.id} onClick={() => setView(item.id)} className={`px-6 py-2.5 rounded-[1rem] text-xs font-black uppercase transition-all flex items-center gap-2 ${view === item.id ? 'bg-white text-blue-600 shadow-md shadow-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}>
@@ -988,21 +1122,30 @@ export default function CobranzasApp() {
         {loading ? <SkeletonLoader /> : (
           <>
             {view === 'dashboard' && renderDashboard()}
-            {view === 'list' && renderClientList()}
+            {(view === 'list' || view === 'financing') && renderClientList()}
             {view === 'alerts' && renderAlerts()}
             {view === 'detail' && <ClientDetailView client={selectedClient} onBack={() => setView('list')} onSavePayment={handleSavePayment} onAddComment={handleAddComment} onSaveCommitment={handleSaveCommitment} onDeleteManual={handleDeleteManualClient} />}
           </>
         )}
       </main>
 
-      {showManualForm && <ManualClientForm onClose={() => setShowManualForm(false)} onSave={handleSaveManualClient} />}
+      {showManualForm && <ManualClientForm onClose={() => setShowManualForm(false)} onSave={handleSaveManualClient} showNotify={showNotify} />}
       {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
+      
+      <ConfirmationModal 
+        isOpen={showClearConfirm} 
+        onClose={() => setShowClearConfirm(false)} 
+        onConfirm={confirmClearBase} 
+        title="¿Borrar Base Importada?" 
+        message="Esta acción eliminará todos los datos cargados desde el archivo CSV. Los registros de financiamiento manual NO se verán afectados. ¿Desea continuar?" 
+      />
     </div>
   );
 }
 
 const INITIAL_BASE_DATA = [
   { id: "0101ACV001003", grupo: "ACV001", puesto: "3", cliente: "MUÑOZ LOZADA MARIA IVONNE", celular: "0969541591", cuota: 250, vencidas: 3, saldo: 6000, cedula: "0930440896", ejecutivo: "Gianella", ciudad: "GUAYAQUIL" },
-  { id: "0101ADP005053", grupo: "ADP005", puesto: "53", cliente: "PAZ MIRALLA RAMON AURELIO", celular: "0959637842", cuota: 277, vencidas: 11, saldo: 5148, cedula: "0906516463", ejecutivo: "Gianella", ciudad: "GUAYAQUIL" },
-  { id: "0101ADP005103", grupo: "ADP005", puesto: "103", cliente: "REYES SANTANA ELIO DEMECIO", celular: "0991413550", cuota: 167, vencidas: 0, saldo: 7332, cedula: "0912813714", ejecutivo: "Gianella", ciudad: "GUAYAQUIL" }
+  { id: "0101ADP005053", grupo: "ADP005", puesto: "53", cliente: "PAZ MIRALLA RAMON AURELIO", celular: "0959637842", cuota: 277, vencidas: 11, saldo: 5148, cedula: "0906516463", ejecutivo: "Fabiola", ciudad: "GUAYAQUIL" },
+  { id: "0101ADP005103", grupo: "ADP005", puesto: "103", cliente: "REYES SANTANA ELIO DEMECIO", celular: "0991413550", cuota: 167, vencidas: 0, saldo: 7332, cedula: "0912813714", ejecutivo: "Jordy", ciudad: "GUAYAQUIL" },
+  { id: "0101ACV001008", grupo: "ACV001", puesto: "8", cliente: "RAMIREZ CORDOVA SERGIO ENRIQUE", celular: "0985965387", cuota: 250, vencidas: 3, saldo: 5500, cedula: "0912141553", ejecutivo: "Miguel", ciudad: "GUAYAQUIL" }
 ];
