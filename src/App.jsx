@@ -10,7 +10,8 @@ import {
   Briefcase, Clock, Calculator, PlusCircle, MinusCircle, ClipboardList, 
   Upload, FileSpreadsheet, Trash2, Download, Printer, BarChart2, 
   Table as TableIcon, Settings, Bell, Calendar as CalendarIcon, 
-  ListFilter, RefreshCw, UserPlus, X, Info, TrendingDown, Wallet, Target, AlertTriangle
+  ListFilter, RefreshCw, UserPlus, X, Info, TrendingDown, Wallet, Target, AlertTriangle,
+  Award // Nuevo icono para adjudicación
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -20,7 +21,7 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.9.9-FIX-EXCEL-CUOTA";
+const APP_VERSION = "2.11.0-EXEC-CARDS";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
 // Configuración de Firebase: Usa la del entorno si existe, sino la proporcionada
@@ -282,10 +283,19 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50/50 p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
               <div className="flex-1">
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex flex-wrap items-center gap-3 mb-3">
                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${client.pagado ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
                      {client.pagado ? 'Gestionado' : 'Pendiente'}
                    </span>
+                   {client.fechaAdjudicacion ? (
+                     <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 border-blue-200 flex items-center gap-1">
+                       <Award className="h-3 w-3" /> Adjudicado: {client.fechaAdjudicacion}
+                     </span>
+                   ) : (
+                     <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-200 text-slate-500 border-slate-300">
+                       No Adjudicado
+                     </span>
+                   )}
                    {client.isManual && <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-purple-100 text-purple-700 border-purple-200">Financiamiento</span>}
                 </div>
                 <h1 className="text-3xl font-black text-slate-800 leading-tight">{client.cliente}</h1>
@@ -631,7 +641,8 @@ export default function App() {
             cedula: getIdx(['CEDULA', 'CÉDULA', 'RUC']),
             grupo: getIdx(['GRUPO']),
             ciudad: getIdx(['CIUDAD']),
-            puesto: getIdx(['PUESTO'])
+            puesto: getIdx(['PUESTO']),
+            fechaAdjudicacion: getIdx(['ADJUDICACION', 'FECHA DE ADJUDICACION', 'F. ADJUDICACION', 'ADJUDICADO'])
          };
 
          return dataRows.map((row, i) => {
@@ -658,7 +669,8 @@ export default function App() {
                  cedula: idx.cedula !== -1 ? String(getVal(idx.cedula)) : '',
                  grupo: idx.grupo !== -1 ? String(getVal(idx.grupo)) : 'GEN',
                  ciudad: idx.ciudad !== -1 ? String(getVal(idx.ciudad)) : 'S/I',
-                 puesto: idx.puesto !== -1 ? String(getVal(idx.puesto)) : '0'
+                 puesto: idx.puesto !== -1 ? String(getVal(idx.puesto)) : '0',
+                 fechaAdjudicacion: idx.fechaAdjudicacion !== -1 ? String(getVal(idx.fechaAdjudicacion)) : ''
              };
          }).filter(Boolean);
     };
@@ -738,6 +750,8 @@ export default function App() {
         <td style="mso-number-format:'0.00'">${c.montoPagadoTotal.toFixed(2)}</td>
         <td style="mso-number-format:'0.00'">${c.saldoActual.toFixed(2)}</td>
         <td>${c.gestionado ? 'Gestionado' : 'Pendiente'}</td>
+        <td>${c.fechaAdjudicacion ? 'ADJUDICADO' : 'NO ADJUDICADO'}</td>
+        <td>${c.fechaAdjudicacion || ''}</td>
         <td>${c.commitmentDate || ''}</td>
         <td>${(c.comentarios || []).map(com => `[${com.date.split('T')[0]}] ${com.text}`).join(' | ')}</td>
       </tr>
@@ -766,6 +780,8 @@ export default function App() {
               <th>RECAUDADO ($)</th>
               <th>SALDO ($)</th>
               <th>ESTADO</th>
+              <th>ADJUDICACIÓN</th>
+              <th>FECHA ADJ.</th>
               <th>FECHA COMPROMISO</th>
               <th>HISTORIAL GESTIÓN</th>
             </tr>
@@ -1063,6 +1079,9 @@ export default function App() {
       if (isFinancingView && !c.isManual) return false;
       if (!isFinancingView && view === 'list' && c.isManual) return false; // En cartera normal no mostramos manuales (opcional, según preferencia)
       
+      // Filtro de Ejecutivo (NUEVO)
+      if (filterExecutive !== 'Todos' && !c.ejecutivo.includes(filterExecutive)) return false;
+
       // Filtro de Buscador
       const matchSearch = c.cliente.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase());
       
@@ -1071,11 +1090,48 @@ export default function App() {
 
     return (
       <div className="space-y-6 animate-fade-in h-[calc(100vh-200px)] flex flex-col">
+        
+        {/* Executive Tabs/Cards Row */}
+        <div className="flex overflow-x-auto pb-2 gap-3 no-print scrollbar-hide">
+            <button 
+                onClick={() => setFilterExecutive('Todos')}
+                className={`flex items-center gap-3 px-6 py-4 rounded-[1.5rem] border transition-all min-w-[160px] cursor-pointer group ${filterExecutive === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-xl shadow-slate-200' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:shadow-md'}`}
+            >
+                <div className={`p-2 rounded-full ${filterExecutive === 'Todos' ? 'bg-white/20' : 'bg-slate-100 group-hover:bg-blue-50'}`}><Users className="h-5 w-5" /></div>
+                <div className="text-left">
+                    <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">Equipo</p>
+                    <p className="font-black text-lg leading-none">Todos</p>
+                </div>
+            </button>
+
+            {["Gianella", "Fabiola", "Jordy", "Miguel"].map(exec => {
+                // Quick count
+                const count = mergedData.filter(c => c.ejecutivo.includes(exec)).length;
+                const isActive = filterExecutive === exec;
+                return (
+                    <button 
+                        key={exec}
+                        onClick={() => setFilterExecutive(exec)}
+                        className={`flex items-center gap-3 px-6 py-4 rounded-[1.5rem] border transition-all min-w-[160px] cursor-pointer group ${isActive ? 'bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-200 scale-105' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:shadow-md'}`}
+                    >
+                        <div className={`p-2 rounded-full ${isActive ? 'bg-white/20' : 'bg-slate-100 group-hover:bg-blue-50'}`}><User className="h-5 w-5" /></div>
+                        <div className="text-left">
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-blue-200' : 'text-slate-400'}`}>Ejecutivo</p>
+                            <p className="font-black text-lg leading-none">{exec}</p>
+                        </div>
+                        <span className={`ml-auto text-xs font-black px-2 py-1 rounded-lg ${isActive ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600'}`}>{count}</span>
+                    </button>
+                )
+            })}
+        </div>
+
         <div className="flex flex-col md:flex-row gap-4 items-center no-print">
+          {/* Search Input (Full width now since drop down is gone) */}
           <div className="bg-white px-5 py-4 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-3 flex-1 w-full">
             <Search className="h-5 w-5 text-slate-400" />
             <input className="bg-transparent border-none outline-none w-full text-slate-700 font-medium" placeholder="Buscar por nombre, ID o cédula..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
+          {/* Action Buttons */}
           <div className="flex gap-2 w-full md:w-auto">
              <button onClick={() => setShowManualForm(true)} className="flex-1 bg-blue-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"><PlusCircle className="h-5 w-5" /> Nuevo</button>
              <button onClick={handleExportExcel} className="flex-1 bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"><Download className="h-5 w-5" /> Reporte Excel</button>
@@ -1112,7 +1168,14 @@ export default function App() {
                       </div>
                     </td>
                     <td className="px-6 py-5">
-                      <p className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{c.cliente}</p>
+                      <div className="flex items-center gap-2">
+                         <p className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{c.cliente}</p>
+                         {c.fechaAdjudicacion && (
+                           <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border border-blue-100 flex items-center gap-1">
+                             <Award className="h-3 w-3" /> Adjudicado
+                           </span>
+                         )}
+                      </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[9px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{c.id}</span>
                         <span className="text-[9px] font-bold text-slate-400 uppercase">{c.ejecutivo}</span>
@@ -1230,8 +1293,8 @@ export default function App() {
 }
 
 const INITIAL_BASE_DATA = [
-  { id: "0101ACV001003", grupo: "ACV001", puesto: "3", cliente: "MUÑOZ LOZADA MARIA IVONNE", celular: "0969541591", cuota: 250, vencidas: 3, saldo: 6000, cedula: "0930440896", ejecutivo: "Gianella", ciudad: "GUAYAQUIL" },
-  { id: "0101ADP005053", grupo: "ADP005", puesto: "53", cliente: "PAZ MIRALLA RAMON AURELIO", celular: "0959637842", cuota: 277, vencidas: 11, saldo: 5148, cedula: "0906516463", ejecutivo: "Fabiola", ciudad: "GUAYAQUIL" },
-  { id: "0101ADP005103", grupo: "ADP005", puesto: "103", cliente: "REYES SANTANA ELIO DEMECIO", celular: "0991413550", cuota: 167, vencidas: 0, saldo: 7332, cedula: "0912813714", ejecutivo: "Jordy", ciudad: "GUAYAQUIL" },
-  { id: "0101ACV001008", grupo: "ACV001", puesto: "8", cliente: "RAMIREZ CORDOVA SERGIO ENRIQUE", celular: "0985965387", cuota: 250, vencidas: 3, saldo: 5500, cedula: "0912141553", ejecutivo: "Miguel", ciudad: "GUAYAQUIL" }
+  { id: "0101ACV001003", grupo: "ACV001", puesto: "3", cliente: "MUÑOZ LOZADA MARIA IVONNE", celular: "0969541591", cuota: 250, vencidas: 3, saldo: 6000, cedula: "0930440896", ejecutivo: "Gianella", ciudad: "GUAYAQUIL", fechaAdjudicacion: "" },
+  { id: "0101ADP005053", grupo: "ADP005", puesto: "53", cliente: "PAZ MIRALLA RAMON AURELIO", celular: "0959637842", cuota: 277, vencidas: 11, saldo: 5148, cedula: "0906516463", ejecutivo: "Fabiola", ciudad: "GUAYAQUIL", fechaAdjudicacion: "2023-10-15" },
+  { id: "0101ADP005103", grupo: "ADP005", puesto: "103", cliente: "REYES SANTANA ELIO DEMECIO", celular: "0991413550", cuota: 167, vencidas: 0, saldo: 7332, cedula: "0912813714", ejecutivo: "Jordy", ciudad: "GUAYAQUIL", fechaAdjudicacion: "" },
+  { id: "0101ACV001008", grupo: "ACV001", puesto: "8", cliente: "RAMIREZ CORDOVA SERGIO ENRIQUE", celular: "0985965387", cuota: 250, vencidas: 3, saldo: 5500, cedula: "0912141553", ejecutivo: "Miguel", ciudad: "GUAYAQUIL", fechaAdjudicacion: "2023-11-20" }
 ];
