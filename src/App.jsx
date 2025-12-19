@@ -11,7 +11,7 @@ import {
   Upload, FileSpreadsheet, Trash2, Download, Printer, BarChart2, 
   Table as TableIcon, Settings, Bell, Calendar as CalendarIcon, 
   ListFilter, RefreshCw, UserPlus, X, Info, TrendingDown, Wallet, Target, AlertTriangle,
-  Award // Nuevo icono para adjudicación
+  Award, MessageSquare, MousePointerClick 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -21,10 +21,10 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.11.0-EXEC-CARDS";
+const APP_VERSION = "2.15.0-EXCEL-REPORT-V2";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
-// Configuración de Firebase: Usa la del entorno si existe, sino la proporcionada
+// Configuración de Firebase
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
@@ -39,7 +39,6 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-// Usar __app_id del entorno si está disponible para aislar datos en el editor
 const appId = typeof __app_id !== 'undefined' ? __app_id : DEFAULT_APP_ID;
 
 const KPI_META_ESTATICA = {
@@ -47,11 +46,13 @@ const KPI_META_ESTATICA = {
   carteraTotal: 1202683.84
 };
 
+const EXECUTIVES_LIST = ["Gianella", "Fabiola", "Jordy", "Miguel"];
+
 // --- COMPONENTES DE APOYO ---
 
 const Notification = ({ message, type, onClose }) => {
   useEffect(() => {
-    const timer = setTimeout(onClose, 6000); // 6 segundos para leer errores
+    const timer = setTimeout(onClose, 6000); 
     return () => clearTimeout(timer);
   }, [onClose]);
 
@@ -114,7 +115,6 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
     e.preventDefault();
     setLoading(true);
     
-    // Validación de campos obligatorios
     if (!formData.cliente || !formData.monto || !formData.meses || !formData.fechaVencimiento) {
         showNotify("⚠️ Falta información obligatoria: Nombre, Monto, Meses o Fecha.", "error");
         setLoading(false);
@@ -124,7 +124,6 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
     const montoVal = parseFloat(formData.monto);
     const mesesVal = parseInt(formData.meses);
 
-    // Validación numérica
     if (isNaN(montoVal) || isNaN(mesesVal) || mesesVal <= 0) {
         showNotify("⚠️ El Monto y los Meses deben ser números válidos mayores a 0.", "error");
         setLoading(false);
@@ -132,15 +131,12 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
     }
 
     const cuotaVal = montoVal / mesesVal;
-
-    // Extracción segura del día de pago
-    let diaPago = '05'; // Valor por defecto seguro
+    let diaPago = '05'; 
     if (formData.fechaVencimiento) {
         const parts = formData.fechaVencimiento.split('-');
         if (parts.length === 3) diaPago = parts[2];
     }
 
-    // Construcción de objeto seguro (Sanitización)
     const secureData = {
       cliente: formData.cliente || 'Sin Nombre',
       cedula: formData.cedula || '',
@@ -148,7 +144,7 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
       ejecutivo: formData.ejecutivo || 'Sin Asignar',
       grupo: 'FINANCIAMIENTO',
       ciudad: 'S/I',
-      cuota: Number(cuotaVal.toFixed(2)), // Asegurar número con 2 decimales
+      cuota: Number(cuotaVal.toFixed(2)),
       saldo: Number(montoVal.toFixed(2)),
       vencidas: 0,
       producto: formData.producto || 'Varios',
@@ -160,7 +156,6 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
     };
 
     const success = await onSave(secureData);
-
     if (!success) setLoading(false);
   };
 
@@ -194,7 +189,7 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1">Ejecutivo</label>
                 <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.ejecutivo} onChange={e => setFormData({...formData, ejecutivo: e.target.value})}>
-                    {["Gianella", "Fabiola", "Jordy", "Miguel"].map(e => <option key={e}>{e}</option>)}
+                    {EXECUTIVES_LIST.map(e => <option key={e}>{e}</option>)}
                 </select>
              </div>
              <div className="space-y-1">
@@ -252,12 +247,16 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
   const [payQuotas, setPayQuotas] = useState(0);
   const [abonoValue, setAbonoValue] = useState('');
   const [commitmentDateInput, setCommitmentDateInput] = useState('');
+  const [selectedExec, setSelectedExec] = useState(client.ejecutivo || EXECUTIVES_LIST[0]);
 
   useEffect(() => {
     if (client) {
       setPayQuotas(client.cuotasPagadas || 0);
       setAbonoValue(client.abono || '');
       setCommitmentDateInput(client.commitmentDate || '');
+      // Intentar pre-seleccionar el ejecutivo asignado si existe, sino el primero
+      const matchedExec = EXECUTIVES_LIST.find(e => client.ejecutivo.includes(e));
+      if (matchedExec) setSelectedExec(matchedExec);
     }
   }, [client?.id]);
 
@@ -357,7 +356,7 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Monto a registrar</p>
                 <p className="text-4xl font-black text-blue-600">${totalRecaudoSimulado.toFixed(2)}</p>
               </div>
-              <button onClick={() => onSavePayment(client.id, payQuotas, parseFloat(abonoValue) || 0)} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-10 py-5 rounded-[2rem] font-black shadow-xl shadow-blue-200 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">
+              <button onClick={() => onSavePayment(client.id, payQuotas, parseFloat(abonoValue) || 0, selectedExec)} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-10 py-5 rounded-[2rem] font-black shadow-xl shadow-blue-200 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">
                 <Save className="h-6 w-6" /> Guardar Recaudación
               </button>
             </div>
@@ -382,16 +381,19 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
           </div>
 
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col h-[520px]">
-             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                <h3 className="font-black text-slate-800 flex items-center gap-2"><ClipboardList className="h-5 w-5 text-slate-400" /> Bitácora de Gestión</h3>
-               <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-bold">{(client.comentarios || []).length} registros</span>
+               <span className="bg-white text-slate-500 px-3 py-1 rounded-full text-xs font-bold border border-slate-200">{(client.comentarios || []).length} registros</span>
              </div>
              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
                 {(client.comentarios && client.comentarios.length > 0) ? (
                   [...client.comentarios].sort((a,b) => b.timestamp - a.timestamp).map((note, i) => (
-                    <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+                    <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative group">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-tighter">{note.week}</span>
+                        <div className="flex items-center gap-2">
+                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-tighter">{note.week}</span>
+                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-1"><User className="h-3 w-3" /> {note.author || 'Sistema'}</span>
+                        </div>
                         <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Clock className="h-3 w-3" /> {new Date(note.date).toLocaleDateString()}</span>
                       </div>
                       <p className="text-sm text-slate-700 leading-relaxed font-medium">{note.text}</p>
@@ -405,6 +407,13 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
                 )}
              </div>
              <div className="p-6 border-t border-slate-100 space-y-3 bg-white no-print">
+                <div className="flex gap-2 items-center mb-2 p-2 bg-blue-50 rounded-xl border border-blue-100">
+                    <User className="h-4 w-4 text-blue-500 ml-1" />
+                    <span className="text-xs font-bold text-blue-800 mr-2">Responsable de Gestión:</span>
+                    <select className="flex-1 bg-white border border-blue-200 rounded-lg p-1.5 text-xs font-bold outline-none text-blue-900" value={selectedExec} onChange={e => setSelectedExec(e.target.value)}>
+                        {EXECUTIVES_LIST.map(e => <option key={e}>{e}</option>)}
+                    </select>
+                </div>
                 <div className="flex gap-2">
                   <select className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold" value={managementWeek} onChange={e => setManagementWeek(e.target.value)}>
                     {["Semana 1", "Semana 2", "Semana 3", "Semana 4", "Semana 5"].map(w => <option key={w}>{w}</option>)}
@@ -413,7 +422,7 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
                 </div>
                 <div className="relative">
                   <textarea className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none transition-all" rows="3" placeholder="Ingresar comentario de gestión..." value={commentText} onChange={e => setCommentText(e.target.value)} />
-                  <button disabled={!commentText.trim()} onClick={() => { onAddComment(client.id, commentText, managementWeek, managementDate); setCommentText(''); }} className="absolute bottom-4 right-4 bg-blue-600 text-white p-2 rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-0 transition-all"><Save className="h-5 w-5" /></button>
+                  <button disabled={!commentText.trim()} onClick={() => { onAddComment(client.id, commentText, managementWeek, managementDate, selectedExec); setCommentText(''); }} className="absolute bottom-4 right-4 bg-blue-600 text-white p-2 rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-0 transition-all"><Save className="h-5 w-5" /></button>
                 </div>
              </div>
           </div>
@@ -434,11 +443,15 @@ export default function App() {
   const [baseData, setBaseData] = useState(INITIAL_BASE_DATA);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterExecutive, setFilterExecutive] = useState('Todos');
+  const [filterStatus, setFilterStatus] = useState('Todos'); 
   const [filterAlertType, setFilterAlertType] = useState('all');
   const [showManualForm, setShowManualForm] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false); // Estado para el modal de borrado
+  const [showClearConfirm, setShowClearConfirm] = useState(false); 
   const [notification, setNotification] = useState(null);
   const [weeksConfig, setWeeksConfig] = useState(5);
+  
+  // NUEVO ESTADO: Filtro Drill-down (Interactivo)
+  const [drillDown, setDrillDown] = useState(null);
 
   const fileInputRef = useRef(null);
 
@@ -480,13 +493,13 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const collectionsPath = ['artifacts', appId, 'public', 'data'];
-    const updatesRef = collection(db, ...collectionsPath, 'cobranzas_live_v2');
+    const updatesRef = collection(db, ...collectionsPath, 'cobranzas_live_v3');
     const unsubscribeUpdates = onSnapshot(updatesRef, (snap) => {
       const data = {};
       snap.forEach(d => data[d.id] = d.data());
       setUpdates(data);
     });
-    const manualRef = collection(db, ...collectionsPath, 'cobranzas_manuales_v2');
+    const manualRef = collection(db, ...collectionsPath, 'cobranzas_manuales_v3');
     const unsubscribeManual = onSnapshot(manualRef, (snap) => {
       const data = [];
       snap.forEach(d => data.push({ ...d.data(), id: d.id }));
@@ -502,8 +515,8 @@ export default function App() {
 
   const mergedData = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const source = baseData; // Base importada
-    const combined = [...source, ...manualClients]; // Combinar con manuales
+    const source = baseData; 
+    const combined = [...source, ...manualClients]; 
 
     return combined.map(client => {
       if (!client) return null;
@@ -547,26 +560,26 @@ export default function App() {
 
   // --- LÓGICA DE BORRADO CON MODAL ---
   const handleClearBaseClick = () => {
-    setShowClearConfirm(true); // Abre el modal
+    setShowClearConfirm(true); 
   };
 
   const confirmClearBase = () => {
-    setBaseData([]); // Borra solo los datos del CSV local
-    setShowClearConfirm(false); // Cierra el modal
+    setBaseData([]); 
+    setShowClearConfirm(false); 
     showNotify("Base de datos importada eliminada correctamente. Registros manuales conservados.", "success");
   };
 
-  const handleSavePayment = async (clientId, numCuotas, abono) => {
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_live_v2', clientId);
+  const handleSavePayment = async (clientId, numCuotas, abono, authorName) => {
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_live_v3', clientId);
     try {
       await setDoc(docRef, { cuotasPagadas: numCuotas, abono, updatedAt: serverTimestamp() }, { merge: true });
       showNotify("Pago actualizado exitosamente");
     } catch (e) { showNotify("Error de sincronización", "error"); }
   };
 
-  const handleAddComment = async (clientId, text, week, date) => {
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_live_v2', clientId);
-    const comment = { text, week, date: new Date(date).toISOString(), author: "Gestor", timestamp: Date.now() };
+  const handleAddComment = async (clientId, text, week, date, authorName) => {
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_live_v3', clientId);
+    const comment = { text, week, date: new Date(date).toISOString(), author: authorName || "Gestor", timestamp: Date.now() };
     try {
       await setDoc(docRef, { comentarios: arrayUnion(comment), updatedAt: serverTimestamp() }, { merge: true });
       showNotify("Comentario registrado");
@@ -574,7 +587,7 @@ export default function App() {
   };
 
   const handleSaveCommitment = async (clientId, date) => {
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_live_v2', clientId);
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_live_v3', clientId);
     try {
       await setDoc(docRef, { commitmentDate: date, updatedAt: serverTimestamp() }, { merge: true });
       showNotify("Alerta programada");
@@ -588,13 +601,10 @@ export default function App() {
     }
 
     const newId = `M-${Date.now()}`;
-    // Usamos el ID de la app correctamente en la ruta
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manuales_v2', newId);
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manuales_v3', newId);
     
     try {
-      // Nos aseguramos de que el objeto data esté limpio (sin undefined)
       const cleanData = JSON.parse(JSON.stringify(data));
-      
       await setDoc(docRef, { 
           ...cleanData, 
           id: newId, 
@@ -613,7 +623,7 @@ export default function App() {
   };
 
   const handleDeleteManualClient = async (id) => {
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manuales_v2', id);
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_manuales_v3', id);
     try {
       await deleteDoc(docRef);
       setSelectedClientId(null);
@@ -626,7 +636,6 @@ export default function App() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Helper para procesar headers y filas de datos
     const processData = (headers, dataRows) => {
          const getIdx = (keywords) => headers.findIndex(h => keywords.some(k => h && String(h).toUpperCase().includes(k)));
          
@@ -645,21 +654,29 @@ export default function App() {
             fechaAdjudicacion: getIdx(['ADJUDICACION', 'FECHA DE ADJUDICACION', 'F. ADJUDICACION', 'ADJUDICADO'])
          };
 
+         const seenIds = new Set(); // To track duplicates
+
          return dataRows.map((row, i) => {
              const getVal = (i) => i !== -1 && row[i] !== undefined ? row[i] : '';
-             
-             // Mejorada: Función segura para limpiar y parsear números con formato de moneda (ej: "$ 1,200.00")
              const parseNum = (val) => {
                  if (typeof val === 'number') return val;
                  if (!val) return 0;
-                 // Elimina todo excepto números, puntos y signo menos.
-                 // Esto arregla el problema de "$ 250.00" siendo leído como NaN
                  const clean = String(val).replace(/[^0-9.-]/g, ''); 
                  return parseFloat(clean) || 0;
              };
 
+             // ID Logic
+             let rawId = idx.id !== -1 ? String(getVal(idx.id)).trim() : '';
+             let finalId = rawId;
+             
+             // If empty or duplicate, generate a unique one
+             if (!finalId || seenIds.has(finalId)) {
+                 finalId = finalId ? `${finalId}_DUP_${i}` : `ROW_${i}`;
+             }
+             seenIds.add(finalId);
+
              return {
-                 id: idx.id !== -1 ? String(getVal(idx.id)) : `R-${i}`,
+                 id: finalId, // Use the guaranteed unique ID
                  cliente: idx.cliente !== -1 ? String(getVal(idx.cliente)).toUpperCase() : 'S/N',
                  ejecutivo: idx.ejecutivo !== -1 ? String(getVal(idx.ejecutivo)) : 'Sin Asignar',
                  cuota: idx.cuota !== -1 ? parseNum(getVal(idx.cuota)) : 0,
@@ -676,17 +693,14 @@ export default function App() {
     };
 
     if (file.name.endsWith('.csv')) {
-        // Lógica CSV Existente
         const reader = new FileReader();
         reader.onload = (evt) => {
              try {
                 const text = evt.target.result;
                 const lines = text.split(/\r?\n/).filter(line => line.trim());
                 if (lines.length < 1) return;
-                
                 const headers = lines[0].split(',').map(h => h.trim().toUpperCase().replace(/"/g, ''));
                 const dataRows = lines.slice(1).map(line => line.split(',').map(c => c.trim().replace(/"/g, '')));
-                
                 const parsed = processData(headers, dataRows);
                 if (parsed.length > 0) {
                     setBaseData(parsed);
@@ -698,7 +712,6 @@ export default function App() {
         };
         reader.readAsText(file);
     } else if (file.name.match(/\.(xls|xlsx)$/)) {
-        // Lógica Excel (.xls, .xlsx) usando SheetJS
         const reader = new FileReader();
         reader.onload = (evt) => {
             try {
@@ -716,10 +729,8 @@ export default function App() {
                      showNotify("El archivo Excel está vacío", "error");
                      return;
                 }
-
                 const headers = jsonData[0].map(h => String(h).trim().toUpperCase());
                 const dataRows = jsonData.slice(1);
-                
                 const parsed = processData(headers, dataRows);
                  if (parsed.length > 0) {
                      setBaseData(parsed);
@@ -727,7 +738,6 @@ export default function App() {
                  } else {
                      showNotify("No se encontraron registros válidos en el Excel", "error");
                  }
-
             } catch(e) {
                 console.error(e);
                 showNotify("Error al procesar el archivo Excel. Verifique el formato.", "error");
@@ -740,19 +750,19 @@ export default function App() {
   };
 
   const handleExportExcel = () => {
+    // Ensure we export ALL data, not just filtered view if that was the issue (though mergedData is usually all)
     const tableRows = mergedData.map(c => `
       <tr>
-        <td style="mso-number-format:'@'">${c.id}</td>
+        <td>${c.grupo || ''}</td>
+        <td>${c.puesto || ''}</td>
         <td>${c.cliente}</td>
-        <td>${c.ejecutivo}</td>
         <td style="mso-number-format:'0.00'">${c.cuota.toFixed(2)}</td>
-        <td>${c.vencidasActuales}</td>
+        <td>${c.vencidas || 0}</td>
+        <td>${c.cuotasPagadas || 0}</td>
+        <td>${c.ejecutivo}</td>
+        
         <td style="mso-number-format:'0.00'">${c.montoPagadoTotal.toFixed(2)}</td>
-        <td style="mso-number-format:'0.00'">${c.saldoActual.toFixed(2)}</td>
-        <td>${c.gestionado ? 'Gestionado' : 'Pendiente'}</td>
-        <td>${c.fechaAdjudicacion ? 'ADJUDICADO' : 'NO ADJUDICADO'}</td>
-        <td>${c.fechaAdjudicacion || ''}</td>
-        <td>${c.commitmentDate || ''}</td>
+        <td>${c.fechaAdjudicacion ? 'SI' : 'NO'}</td>
         <td>${(c.comentarios || []).map(com => `[${com.date.split('T')[0]}] ${com.text}`).join(' | ')}</td>
       </tr>
     `).join('');
@@ -772,18 +782,16 @@ export default function App() {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>GRUPO</th>
+              <th>PUESTO</th>
               <th>CLIENTE</th>
-              <th>EJECUTIVO</th>
-              <th>CUOTA ($)</th>
+              <th>CUOTA MENSUAL</th>
               <th>VENCIDAS</th>
-              <th>RECAUDADO ($)</th>
-              <th>SALDO ($)</th>
-              <th>ESTADO</th>
-              <th>ADJUDICACIÓN</th>
-              <th>FECHA ADJ.</th>
-              <th>FECHA COMPROMISO</th>
-              <th>HISTORIAL GESTIÓN</th>
+              <th>CUOTAS COBRADAS</th>
+              <th>EJECUTIVO ASIGNADO</th>
+              <th>TOTAL RECAUDADO ($)</th>
+              <th>ADJUDICADO</th>
+              <th>HISTORIAL</th>
             </tr>
           </thead>
           <tbody>
@@ -798,7 +806,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Reporte_Gestion_${new Date().toISOString().split('T')[0]}.xls`; // Extensión .xls
+    link.download = `Reporte_Gestion_${new Date().toISOString().split('T')[0]}.xls`; 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -809,23 +817,22 @@ export default function App() {
   const renderDashboard = () => {
     const totalRecaudado = mergedData.reduce((acc, curr) => acc + curr.montoPagadoTotal, 0);
     const totalVencidoPorCobrar = mergedData.reduce((acc, curr) => acc + (curr.cuota * curr.vencidasActuales), 0);
-    
-    // KPI NUEVO: Total Financiamiento
-    const totalFinanciamiento = mergedData
-      .filter(c => c.isManual)
-      .reduce((acc, curr) => acc + (curr.saldoActual || 0), 0);
+    const totalFinanciamiento = mergedData.filter(c => c.isManual).reduce((acc, curr) => acc + (curr.saldoActual || 0), 0);
 
-    // Lista de ejecutivos solicitada
-    const targetExecutives = ["Gianella", "Fabiola", "Jordy", "Miguel"];
     const weeks = Array.from({length: weeksConfig}, (_, i) => `Semana ${i + 1}`);
 
     // Inicializar matrices de datos
     const matrixGestion = {}; 
     const matrixRevenue = {}; 
+    const executiveGoals = {}; // New: Store goals and progress per executive
 
-    targetExecutives.forEach(exec => {
+    EXECUTIVES_LIST.forEach(exec => {
       matrixGestion[exec] = { total: 0 };
       matrixRevenue[exec] = { total: 0 };
+      executiveGoals[exec] = { 
+          target: 0, 
+          collected: 0 
+      };
       weeks.forEach(w => {
         matrixGestion[exec][w] = 0;
         matrixRevenue[exec][w] = 0;
@@ -834,23 +841,19 @@ export default function App() {
 
     // Procesar datos para las matrices
     mergedData.forEach(client => {
-      const exec = targetExecutives.find(e => client.ejecutivo.includes(e)) || "Otros";
-      if (!matrixGestion[exec]) {
-          matrixGestion[exec] = { total: 0 };
-          matrixRevenue[exec] = { total: 0 };
-          weeks.forEach(w => { matrixGestion[exec][w] = 0; matrixRevenue[exec][w] = 0; });
+      // 1. Matriz de Recaudación (Se mantiene por Ejecutivo ASIGNADO al cliente - Portfolio Owner)
+      const assignedExec = EXECUTIVES_LIST.find(e => client.ejecutivo.includes(e)) || "Otros";
+      if (!matrixRevenue[assignedExec]) matrixRevenue[assignedExec] = { total: 0 };
+      weeks.forEach(w => { if(!matrixRevenue[assignedExec][w]) matrixRevenue[assignedExec][w] = 0; });
+
+      // --- CÁLCULO DE METAS POR EJECUTIVO (NUEVO) ---
+      if (assignedExec !== "Otros") {
+          // Meta: Suma de la deuda inicial (Vencidas * Cuota). Si Vencidas es 0, usamos 1 cuota (del mes).
+          const initialDebt = (client.vencidas > 0 ? client.vencidas : 1) * client.cuota;
+          executiveGoals[assignedExec].target += initialDebt;
+          executiveGoals[assignedExec].collected += client.montoPagadoTotal;
       }
 
-      // Conteo de gestiones (comentarios por semana)
-      if (client.comentarios && client.comentarios.length > 0) {
-        const clientWeeks = new Set(client.comentarios.map(c => c.week || 'Semana 1'));
-        clientWeeks.forEach(w => {
-          if (matrixGestion[exec][w] !== undefined) matrixGestion[exec][w]++;
-        });
-        matrixGestion[exec].total++;
-      }
-
-      // Monto recaudado (basado en la fecha de actualización si hay pago)
       if (client.montoPagadoTotal > 0 && client.lastUpdate) {
         const pDate = new Date(client.lastUpdate);
         const day = pDate.getDate();
@@ -860,22 +863,43 @@ export default function App() {
         else if (day > 21 && day <= 28) weekTag = 'Semana 4';
         else if (day > 28) weekTag = 'Semana 5';
         
-        if (matrixRevenue[exec][weekTag] !== undefined) {
-          matrixRevenue[exec][weekTag] += client.montoPagadoTotal;
-          matrixRevenue[exec].total += client.montoPagadoTotal;
+        if (matrixRevenue[assignedExec][weekTag] !== undefined) {
+          matrixRevenue[assignedExec][weekTag] += client.montoPagadoTotal;
+          matrixRevenue[assignedExec].total += client.montoPagadoTotal;
         }
+      }
+
+      // 2. Matriz de Gestión (Se calcula por AUTOR de la gestión - Activity Owner)
+      if (client.comentarios && client.comentarios.length > 0) {
+          client.comentarios.forEach(comment => {
+              const author = EXECUTIVES_LIST.find(e => comment.author && comment.author.includes(e));
+              const week = comment.week || 'Semana 1';
+              
+              if (author && matrixGestion[author]) {
+                  if (matrixGestion[author][week] !== undefined) {
+                      matrixGestion[author][week]++;
+                      matrixGestion[author].total++;
+                  }
+              }
+          });
       }
     });
 
-    // Preparar datos para gráficos comparativos
+    // Helper para clic en matriz
+    const handleMatrixClick = (exec, week) => {
+        setDrillDown({ executive: exec, week: week });
+        setView('list');
+    };
+
+    // Preparar datos para gráficos
     const revenueChartData = weeks.map(w => ({
       name: w,
-      ...targetExecutives.reduce((acc, e) => ({ ...acc, [e]: matrixRevenue[e][w] }), {})
+      ...EXECUTIVES_LIST.reduce((acc, e) => ({ ...acc, [e]: matrixRevenue[e][w] }), {})
     }));
 
     const gestionChartData = weeks.map(w => ({
       name: w,
-      ...targetExecutives.reduce((acc, e) => ({ ...acc, [e]: matrixGestion[e][w] }), {})
+      ...EXECUTIVES_LIST.reduce((acc, e) => ({ ...acc, [e]: matrixGestion[e][w] }), {})
     }));
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
@@ -917,13 +941,10 @@ export default function App() {
                   <p className="text-xs font-bold text-blue-300 uppercase mb-1">Total por Recaudar (Vencido)</p>
                   <p className="text-3xl font-black text-white">${totalVencidoPorCobrar.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                 </div>
-                
-                {/* NUEVO KPI: Cartera Financiamiento */}
                 <div className="bg-white/10 border border-purple-400/30 p-6 rounded-[2rem] shadow-xl shadow-purple-500/10 ring-1 ring-white/10">
                   <p className="text-xs font-bold text-purple-200 uppercase mb-1">Cartera Financiamiento</p>
                   <p className="text-3xl font-black text-white">${totalFinanciamiento.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                 </div>
-
                 <div className="bg-white/5 border border-white/10 p-6 rounded-[2rem] hover:bg-white/10 transition-colors">
                   <p className="text-xs font-bold text-blue-200/50 uppercase mb-1">Meta Alcanzada</p>
                   <p className="text-3xl font-black">{((totalRecaudado / KPI_META_ESTATICA.mensual) * 100).toFixed(1)}%</p>
@@ -932,13 +953,56 @@ export default function App() {
           </div>
         </div>
 
+        {/* --- NUEVA SECCIÓN: METAS Y CUMPLIMIENTO POR EJECUTIVO --- */}
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
+            <h3 className="font-black text-slate-800 flex items-center gap-2 mb-6"><Target className="h-6 w-6 text-indigo-600" /> Metas y Cumplimiento por Ejecutivo</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {EXECUTIVES_LIST.map(exec => {
+                    const data = executiveGoals[exec];
+                    const percentage = data.target > 0 ? (data.collected / data.target) * 100 : 0;
+                    return (
+                        <div key={exec} className="bg-slate-50 border border-slate-100 p-6 rounded-[2rem] relative overflow-hidden group hover:shadow-lg transition-all">
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 rounded-full bg-white border border-slate-200 flex items-center justify-center font-black text-slate-700 shadow-sm">{exec.charAt(0)}</div>
+                                    <span className="font-bold text-slate-700">{exec}</span>
+                                </div>
+                                <span className={`text-xs font-black px-2 py-1 rounded-lg ${percentage >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {percentage.toFixed(1)}%
+                                </span>
+                            </div>
+                            
+                            <div className="space-y-3">
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recaudado</p>
+                                    <p className="text-2xl font-black text-emerald-600">${data.collected.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Meta / Base Asignada</p>
+                                    <p className="text-lg font-bold text-slate-600">${data.target.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="w-full bg-slate-200 h-2 rounded-full mt-4 overflow-hidden">
+                                <div 
+                                    className={`h-full rounded-full transition-all duration-1000 ${percentage >= 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} 
+                                    style={{ width: `${Math.min(percentage, 100)}%` }}
+                                ></div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+
         {/* --- MATRICES DE RENDIMIENTO --- */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
            {/* Gráfico Gestión */}
            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
               <div className="flex justify-between items-center mb-8">
-                <h3 className="font-black text-slate-800 flex items-center gap-2"><Briefcase className="h-5 w-5 text-blue-600" /> Casos Gestionados por Ejecutivo</h3>
-                <span className="text-[10px] font-black text-blue-400 uppercase bg-blue-50 px-3 py-1 rounded-full">Casos Únicos / Semanales</span>
+                <h3 className="font-black text-slate-800 flex items-center gap-2"><Briefcase className="h-5 w-5 text-blue-600" /> Actividad Realizada por Ejecutivo</h3>
+                <span className="text-[10px] font-black text-blue-400 uppercase bg-blue-50 px-3 py-1 rounded-full">Gestiones Totales / Semanales</span>
               </div>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -948,7 +1012,7 @@ export default function App() {
                     <YAxis axisLine={false} tickLine={false} />
                     <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)'}} />
                     <Legend iconType="circle" />
-                    {targetExecutives.map((exec, idx) => (
+                    {EXECUTIVES_LIST.map((exec, idx) => (
                       <Bar key={exec} dataKey={exec} fill={COLORS[idx % 4]} radius={[4, 4, 0, 0]} />
                     ))}
                   </BarChart>
@@ -959,7 +1023,7 @@ export default function App() {
            {/* Gráfico Recaudación */}
            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
               <div className="flex justify-between items-center mb-8">
-                <h3 className="font-black text-slate-800 flex items-center gap-2"><DollarSign className="h-5 w-5 text-emerald-600" /> Recaudación por Ejecutivo ($)</h3>
+                <h3 className="font-black text-slate-800 flex items-center gap-2"><DollarSign className="h-5 w-5 text-emerald-600" /> Recaudación por Cartera Asignada ($)</h3>
                 <span className="text-[10px] font-black text-emerald-400 uppercase bg-emerald-50 px-3 py-1 rounded-full">Flujo de Caja / Semanal</span>
               </div>
               <div className="h-80">
@@ -970,7 +1034,7 @@ export default function App() {
                     <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v/1000}k`} />
                     <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)'}} />
                     <Legend iconType="circle" />
-                    {targetExecutives.map((exec, idx) => (
+                    {EXECUTIVES_LIST.map((exec, idx) => (
                       <Bar key={exec} dataKey={exec} fill={COLORS[idx % 4]} radius={[4, 4, 0, 0]} />
                     ))}
                   </BarChart>
@@ -981,7 +1045,7 @@ export default function App() {
 
         {/* --- TABLAS DE DETALLE (MATRICES SOLICITADAS) --- */}
         <div className="space-y-8">
-          {/* Matriz 1: Recaudación */}
+          {/* Matriz 1: Recaudación (RESTAURADA) */}
           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-8 border-b border-slate-100 bg-emerald-50/50">
               <h3 className="font-black text-slate-800 flex items-center gap-2">
@@ -998,7 +1062,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {targetExecutives.map(exec => (
+                  {EXECUTIVES_LIST.map(exec => (
                     <tr key={exec} className="hover:bg-emerald-50/10 transition-colors">
                       <td className="px-8 py-5">
                          <div className="flex items-center gap-2">
@@ -1019,7 +1083,7 @@ export default function App() {
                   <tr className="bg-emerald-600 text-white font-black">
                      <td className="px-8 py-5 uppercase tracking-tighter">Total Ingresos de Red</td>
                      {weeks.map(w => {
-                       const totalW = targetExecutives.reduce((sum, e) => sum + matrixRevenue[e][w], 0);
+                       const totalW = EXECUTIVES_LIST.reduce((sum, e) => sum + matrixRevenue[e][w], 0);
                        return <td key={w} className="px-6 py-5 text-center">${totalW.toLocaleString()}</td>
                      })}
                      <td className="px-8 py-5 text-right font-black text-xl">${totalRecaudado.toLocaleString()}</td>
@@ -1033,8 +1097,9 @@ export default function App() {
           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-8 border-b border-slate-100 bg-slate-50/50">
               <h3 className="font-black text-slate-800 flex items-center gap-2">
-                <TableIcon className="h-5 w-5 text-blue-600" /> Matriz de Productividad (Casos Atendidos)
+                <TableIcon className="h-5 w-5 text-blue-600" /> Matriz de Actividad (Gestiones Realizadas)
               </h3>
+              <p className="text-xs text-slate-400 mt-1">Haz clic en cualquier número para ver el detalle de clientes gestionados.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1042,23 +1107,35 @@ export default function App() {
                   <tr className="bg-slate-50">
                     <th className="px-8 py-5 font-black text-slate-400 uppercase text-[10px] tracking-widest text-left">Ejecutivo</th>
                     {weeks.map(w => <th key={w} className="px-6 py-5 font-black text-slate-400 uppercase text-[10px] tracking-widest text-center">{w}</th>)}
-                    <th className="px-8 py-5 font-black text-blue-600 uppercase text-[10px] tracking-widest text-right bg-blue-50/50">Consolidado</th>
+                    <th className="px-8 py-5 font-black text-blue-600 uppercase text-[10px] tracking-widest text-right bg-blue-50/50">Total Gestiones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {targetExecutives.map(exec => (
+                  {EXECUTIVES_LIST.map(exec => (
                     <tr key={exec} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-8 py-5 font-bold text-slate-700">{exec}</td>
                       {weeks.map(w => (
-                        <td key={w} className="px-6 py-5 text-center">
+                        <td 
+                            key={w} 
+                            onClick={() => handleMatrixClick(exec, w)}
+                            className="px-6 py-5 text-center cursor-pointer hover:bg-blue-50 transition-colors group relative"
+                        >
                           {matrixGestion[exec][w] > 0 ? (
-                            <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-black text-xs">
+                            <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-black text-xs group-hover:bg-blue-600 group-hover:text-white transition-colors">
                               {matrixGestion[exec][w]}
                             </span>
-                          ) : <span className="text-slate-200">-</span>}
+                          ) : <span className="text-slate-200 group-hover:text-blue-300">-</span>}
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-10 pointer-events-none">
+                             <MousePointerClick className="h-4 w-4" />
+                          </div>
                         </td>
                       ))}
-                      <td className="px-8 py-5 text-right font-black text-blue-700 bg-blue-50/30">{matrixGestion[exec].total}</td>
+                      <td 
+                        onClick={() => handleMatrixClick(exec, 'Total')}
+                        className="px-8 py-5 text-right font-black text-blue-700 bg-blue-50/30 cursor-pointer hover:bg-blue-100 transition-colors"
+                      >
+                          {matrixGestion[exec].total}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1071,18 +1148,28 @@ export default function App() {
   };
 
   const renderClientList = () => {
-    // Si la vista es 'financing', solo mostramos clientes manuales
     const isFinancingView = view === 'financing';
     
     const filtered = mergedData.filter(c => {
-      // Filtro de Vista (Tag)
       if (isFinancingView && !c.isManual) return false;
-      if (!isFinancingView && view === 'list' && c.isManual) return false; // En cartera normal no mostramos manuales (opcional, según preferencia)
+      if (!isFinancingView && view === 'list' && c.isManual) return false; 
       
-      // Filtro de Ejecutivo (NUEVO)
-      if (filterExecutive !== 'Todos' && !c.ejecutivo.includes(filterExecutive)) return false;
+      // LOGICA DE DRILL-DOWN (PRIORIDAD ALTA)
+      if (drillDown) {
+          // Buscamos si el cliente tiene AL MENOS UN comentario que coincida con el Ejecutivo y la Semana seleccionados
+          const hasMatchingManagement = c.comentarios?.some(com => 
+             (com.author === drillDown.executive) && 
+             (drillDown.week === 'Total' || com.week === drillDown.week)
+          );
+          return hasMatchingManagement;
+      }
 
-      // Filtro de Buscador
+      // Filtros Estándar (Solo se aplican si NO hay drill-down activo)
+      if (filterExecutive !== 'Todos' && !c.ejecutivo.includes(filterExecutive)) return false;
+      if (filterStatus === 'Gestionados' && !c.gestionado) return false;
+      if (filterStatus === 'Pendientes' && c.gestionado) return false;
+
+      // Filtro de Buscador (Siempre aplica)
       const matchSearch = c.cliente.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase());
       
       return matchSearch;
@@ -1091,47 +1178,79 @@ export default function App() {
     return (
       <div className="space-y-6 animate-fade-in h-[calc(100vh-200px)] flex flex-col">
         
-        {/* Executive Tabs/Cards Row */}
-        <div className="flex overflow-x-auto pb-2 gap-3 no-print scrollbar-hide">
-            <button 
-                onClick={() => setFilterExecutive('Todos')}
-                className={`flex items-center gap-3 px-6 py-4 rounded-[1.5rem] border transition-all min-w-[160px] cursor-pointer group ${filterExecutive === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-xl shadow-slate-200' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:shadow-md'}`}
-            >
-                <div className={`p-2 rounded-full ${filterExecutive === 'Todos' ? 'bg-white/20' : 'bg-slate-100 group-hover:bg-blue-50'}`}><Users className="h-5 w-5" /></div>
-                <div className="text-left">
-                    <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">Equipo</p>
-                    <p className="font-black text-lg leading-none">Todos</p>
+        {/* BANNER DE DRILL-DOWN ACTIVO */}
+        {drillDown && (
+            <div className="bg-blue-900 text-white p-4 rounded-2xl flex justify-between items-center shadow-lg animate-fade-in-down mb-4 border border-blue-800">
+                <div className="flex items-center gap-3">
+                    <div className="bg-blue-700 p-2 rounded-xl"><Filter className="h-5 w-5" /></div>
+                    <div>
+                        <p className="text-[10px] font-bold uppercase text-blue-300 tracking-wider">Filtro de Auditoría Activo</p>
+                        <p className="font-bold text-lg">Viendo gestiones de <span className="text-blue-300">{drillDown.executive}</span> en <span className="text-blue-300">{drillDown.week}</span></p>
+                    </div>
                 </div>
-            </button>
+                <button onClick={() => setDrillDown(null)} className="bg-white text-blue-900 px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-50 transition-colors flex items-center gap-2">
+                    <X className="h-4 w-4" /> Limpiar Filtro
+                </button>
+            </div>
+        )}
 
-            {["Gianella", "Fabiola", "Jordy", "Miguel"].map(exec => {
-                // Quick count
-                const count = mergedData.filter(c => c.ejecutivo.includes(exec)).length;
-                const isActive = filterExecutive === exec;
-                return (
-                    <button 
-                        key={exec}
-                        onClick={() => setFilterExecutive(exec)}
-                        className={`flex items-center gap-3 px-6 py-4 rounded-[1.5rem] border transition-all min-w-[160px] cursor-pointer group ${isActive ? 'bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-200 scale-105' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:shadow-md'}`}
-                    >
-                        <div className={`p-2 rounded-full ${isActive ? 'bg-white/20' : 'bg-slate-100 group-hover:bg-blue-50'}`}><User className="h-5 w-5" /></div>
-                        <div className="text-left">
-                            <p className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-blue-200' : 'text-slate-400'}`}>Ejecutivo</p>
-                            <p className="font-black text-lg leading-none">{exec}</p>
-                        </div>
-                        <span className={`ml-auto text-xs font-black px-2 py-1 rounded-lg ${isActive ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600'}`}>{count}</span>
-                    </button>
-                )
-            })}
-        </div>
+        {/* Executive Tabs/Cards Row (Solo visible si NO hay drill-down) */}
+        {!drillDown && (
+            <div className="flex overflow-x-auto pb-2 gap-3 no-print scrollbar-hide">
+                <button 
+                    onClick={() => setFilterExecutive('Todos')}
+                    className={`flex items-center gap-3 px-6 py-4 rounded-[1.5rem] border transition-all min-w-[160px] cursor-pointer group ${filterExecutive === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-xl shadow-slate-200' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:shadow-md'}`}
+                >
+                    <div className={`p-2 rounded-full ${filterExecutive === 'Todos' ? 'bg-white/20' : 'bg-slate-100 group-hover:bg-blue-50'}`}><Users className="h-5 w-5" /></div>
+                    <div className="text-left">
+                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-60">Equipo</p>
+                        <p className="font-black text-lg leading-none">Todos</p>
+                    </div>
+                </button>
+
+                {EXECUTIVES_LIST.map(exec => {
+                    const count = mergedData.filter(c => c.ejecutivo.includes(exec)).length;
+                    const isActive = filterExecutive === exec;
+                    return (
+                        <button 
+                            key={exec}
+                            onClick={() => setFilterExecutive(exec)}
+                            className={`flex items-center gap-3 px-6 py-4 rounded-[1.5rem] border transition-all min-w-[160px] cursor-pointer group ${isActive ? 'bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-200 scale-105' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:shadow-md'}`}
+                        >
+                            <div className={`p-2 rounded-full ${isActive ? 'bg-white/20' : 'bg-slate-100 group-hover:bg-blue-50'}`}><User className="h-5 w-5" /></div>
+                            <div className="text-left">
+                                <p className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-blue-200' : 'text-slate-400'}`}>Ejecutivo</p>
+                                <p className="font-black text-lg leading-none">{exec}</p>
+                            </div>
+                            <span className={`ml-auto text-xs font-black px-2 py-1 rounded-lg ${isActive ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600'}`}>{count}</span>
+                        </button>
+                    )
+                })}
+            </div>
+        )}
 
         <div className="flex flex-col md:flex-row gap-4 items-center no-print">
-          {/* Search Input (Full width now since drop down is gone) */}
           <div className="bg-white px-5 py-4 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-3 flex-1 w-full">
             <Search className="h-5 w-5 text-slate-400" />
             <input className="bg-transparent border-none outline-none w-full text-slate-700 font-medium" placeholder="Buscar por nombre, ID o cédula..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
-          {/* Action Buttons */}
+          
+          {/* NUEVO: Filtro de Estado de Gestión (Solo si no hay Drill-down) */}
+          {!drillDown && (
+              <div className="bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-2">
+                    <ListFilter className="h-4 w-4 text-blue-500" />
+                    <select 
+                      value={filterStatus} 
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className="bg-transparent font-bold text-sm outline-none text-slate-700 cursor-pointer min-w-[120px]"
+                    >
+                      <option value="Todos">Ver Todos</option>
+                      <option value="Gestionados">✅ Gestionados</option>
+                      <option value="Pendientes">⏳ Pendientes</option>
+                    </select>
+              </div>
+          )}
+
           <div className="flex gap-2 w-full md:w-auto">
              <button onClick={() => setShowManualForm(true)} className="flex-1 bg-blue-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"><PlusCircle className="h-5 w-5" /> Nuevo</button>
              <button onClick={handleExportExcel} className="flex-1 bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black shadow-lg flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"><Download className="h-5 w-5" /> Reporte Excel</button>
@@ -1259,7 +1378,7 @@ export default function App() {
                {id: 'financing', icon: Wallet, label: 'Financiamiento'}, // NUEVO TAG
                {id: 'alerts', icon: Bell, label: 'Alertas'}
              ].map(item => (
-               <button key={item.id} onClick={() => setView(item.id)} className={`px-6 py-2.5 rounded-[1rem] text-xs font-black uppercase transition-all flex items-center gap-2 ${view === item.id ? 'bg-white text-blue-600 shadow-md shadow-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}>
+               <button key={item.id} onClick={() => { setView(item.id); setDrillDown(null); }} className={`px-6 py-2.5 rounded-[1rem] text-xs font-black uppercase transition-all flex items-center gap-2 ${view === item.id ? 'bg-white text-blue-600 shadow-md shadow-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}>
                  <item.icon className="h-4 w-4" /> {item.label}
                </button>
              ))}
