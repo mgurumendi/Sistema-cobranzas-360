@@ -11,17 +11,18 @@ import {
   Upload, FileSpreadsheet, Trash2, Download, Printer, BarChart2, 
   Table as TableIcon, Settings, Bell, Calendar as CalendarIcon, 
   ListFilter, RefreshCw, UserPlus, X, Info, TrendingDown, Wallet, Target, AlertTriangle,
-  Award, MessageSquare, MousePointerClick 
+  Award, MessageSquare, MousePointerClick, Lock, LogOut, UserCheck, ShieldCheck, Key, UserPlus as UserPlusIcon,
+  Send, CalendarDays, PenTool, Check
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, doc, setDoc, onSnapshot, 
-  updateDoc, arrayUnion, serverTimestamp, deleteDoc, query
+  updateDoc, arrayUnion, serverTimestamp, deleteDoc, query, getDoc, getDocs, where
 } from 'firebase/firestore';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 
 // --- CONFIGURACIÓN Y CONSTANTES ---
-const APP_VERSION = "2.15.0-EXCEL-REPORT-V2";
+const APP_VERSION = "3.8.3-MANUAL-FORM-STABILITY";
 const DEFAULT_APP_ID = 'sistema-cobranzas-360-v2';
 
 // Configuración de Firebase
@@ -46,6 +47,7 @@ const KPI_META_ESTATICA = {
   carteraTotal: 1202683.84
 };
 
+const ADMIN_EMAIL = 'mgurumendi@bopelual.com';
 const EXECUTIVES_LIST = ["Gianella", "Fabiola", "Jordy", "Miguel"];
 
 // --- COMPONENTES DE APOYO ---
@@ -67,6 +69,360 @@ const Notification = ({ message, type, onClose }) => {
   );
 };
 
+// --- PANTALLA DE SOLICITUD DE ACCESO ---
+const RequestAccessForm = ({ onCancel, onSubmit, loading }) => {
+    const [formData, setFormData] = useState({ name: '', cedula: '', email: '', password: '' });
+
+    return (
+        <div className="absolute inset-0 bg-slate-900 z-20 flex flex-col items-center justify-center p-6 animate-fade-in">
+            <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl p-8 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
+                <button onClick={onCancel} className="mb-6 flex items-center gap-2 text-slate-500 font-bold hover:text-blue-600 transition-colors"><ArrowLeft className="h-5 w-5" /> Volver al Login</button>
+                <h2 className="text-3xl font-black text-slate-800 mb-2">Solicitar Acceso</h2>
+                <p className="text-slate-500 mb-8 font-medium text-sm">Complete sus datos para que el administrador apruebe su cuenta.</p>
+                
+                <form onSubmit={(e) => { e.preventDefault(); onSubmit(formData); }} className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nombre Completo</label>
+                        <input required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Número de Cédula</label>
+                        <input required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.cedula} onChange={e => setFormData({...formData, cedula: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Correo Electrónico</label>
+                        <input type="email" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Contraseña Deseada</label>
+                        <input type="password" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
+                    </div>
+                    <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all mt-4 flex justify-center items-center gap-2">
+                        {loading ? 'Enviando...' : <><Save className="h-4 w-4" /> Enviar Solicitud</>}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// --- PANTALLA DE CAMBIO DE CONTRASEÑA ---
+const ChangePasswordModal = ({ onClose, onSubmit, loading, userEmail }) => {
+    const [formData, setFormData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (formData.newPassword !== formData.confirmPassword) {
+            alert("Las contraseñas nuevas no coinciden");
+            return;
+        }
+        onSubmit(userEmail, formData.currentPassword, formData.newPassword);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl p-8 relative overflow-hidden animate-fade-in-up">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-300 hover:text-slate-500"><X className="h-6 w-6" /></button>
+                <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Key className="h-8 w-8 text-blue-600" />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-800">Cambiar Contraseña</h2>
+                    <p className="text-xs text-slate-500 font-bold mt-1">{userEmail}</p>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Contraseña Actual</label>
+                        <input type="password" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.currentPassword} onChange={e => setFormData({...formData, currentPassword: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nueva Contraseña</label>
+                        <input type="password" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.newPassword} onChange={e => setFormData({...formData, newPassword: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Confirmar Nueva Contraseña</label>
+                        <input type="password" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.confirmPassword} onChange={e => setFormData({...formData, confirmPassword: e.target.value})} />
+                    </div>
+                    <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all mt-4">
+                        {loading ? 'Actualizando...' : 'Actualizar Contraseña'}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// --- PANTALLA DE RECUPERACIÓN DE CONTRASEÑA ---
+const ForgotPasswordForm = ({ onCancel, onSubmit, loading }) => {
+    const [formData, setFormData] = useState({ email: '', newPassword: '' });
+
+    return (
+        <div className="absolute inset-0 bg-slate-900 z-20 flex flex-col items-center justify-center p-6 animate-fade-in">
+            <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl p-8 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
+                <button onClick={onCancel} className="mb-6 flex items-center gap-2 text-slate-500 font-bold hover:text-blue-600 transition-colors"><ArrowLeft className="h-5 w-5" /> Volver al Login</button>
+                <h2 className="text-3xl font-black text-slate-800 mb-2">Recuperar Clave</h2>
+                <p className="text-slate-500 mb-8 font-medium text-sm">Ingrese su correo registrado y la nueva contraseña para confirmar el cambio.</p>
+                
+                <form onSubmit={(e) => { e.preventDefault(); onSubmit(formData); }} className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Correo Registrado</label>
+                        <input type="email" required className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                    </div>
+                    <div className="pt-4 border-t border-slate-100 mt-4">
+                        <label className="text-[10px] font-black text-emerald-600 uppercase ml-1">Nueva Contraseña</label>
+                        <input type="password" required className="w-full bg-emerald-50 border border-emerald-100 rounded-xl p-3 outline-none focus:ring-2 focus:ring-emerald-500 text-emerald-900 font-bold" placeholder="Escriba su nueva clave" value={formData.newPassword} onChange={e => setFormData({...formData, newPassword: e.target.value})} />
+                    </div>
+                    <button type="submit" disabled={loading} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all mt-4 flex justify-center items-center gap-2">
+                        {loading ? 'Procesando...' : <><Check className="h-4 w-4" /> Confirmar Cambio</>}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// --- COMPONENTE DE LOGIN PRINCIPAL ---
+const LoginPage = ({ onLogin, onRegisterRequest, onForgotPassword }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    await onLogin(email, password, (err) => {
+        setError(err);
+        setLoading(false);
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-fade-in-up relative">
+        <div className="bg-gradient-to-br from-blue-600 to-indigo-800 p-10 text-center relative overflow-hidden">
+           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+           <div className="relative z-10">
+                <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-sm shadow-inner">
+                    <Lock className="h-10 w-10 text-white" />
+                </div>
+                <h1 className="text-3xl font-black text-white tracking-tight">Acceso Seguro</h1>
+                <p className="text-blue-100 mt-2 font-medium">Sistema Cobranzas 360</p>
+           </div>
+        </div>
+        
+        <form onSubmit={handleLoginSubmit} className="p-10 space-y-6">
+           <div className="space-y-2">
+             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Correo Electrónico</label>
+             <div className="relative">
+               <User className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+               <input 
+                 type="email" 
+                 required
+                 className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                 placeholder="usuario@empresa.com"
+                 value={email}
+                 onChange={e => setEmail(e.target.value)}
+               />
+             </div>
+           </div>
+
+           <div className="space-y-2">
+             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Contraseña</label>
+             <div className="relative">
+               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+               <input 
+                 type="password" 
+                 required
+                 className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                 placeholder="••••••••"
+                 value={password}
+                 onChange={e => setPassword(e.target.value)}
+               />
+             </div>
+             <div className="text-right">
+                 <button type="button" onClick={onForgotPassword} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">¿Olvidó su contraseña?</button>
+             </div>
+           </div>
+
+           {error && (
+             <div className="p-4 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100 animate-shake">
+               <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+             </div>
+           )}
+
+           <button 
+             type="submit" 
+             disabled={loading}
+             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black shadow-xl shadow-blue-200 hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
+           >
+             {loading ? 'Validando...' : 'Iniciar Sesión'}
+           </button>
+           
+           <div className="pt-4 border-t border-slate-100">
+               <button type="button" onClick={onRegisterRequest} className="w-full py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50 hover:text-blue-600 transition-all text-sm flex items-center justify-center gap-2">
+                 <UserPlusIcon className="h-4 w-4" /> Solicitar Acceso
+               </button>
+           </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// --- PANEL DE ADMINISTRACIÓN ---
+const AdminPanel = ({ onClose, showNotify }) => {
+    const [requests, setRequests] = useState([]);
+    const [users, setUsers] = useState([]);
+
+    useEffect(() => {
+        const qReq = collection(db, 'artifacts', appId, 'public', 'data', 'cobranzas_requests');
+        const unsubReq = onSnapshot(qReq, (snap) => {
+            const data = [];
+            snap.forEach(d => data.push({ ...d.data(), id: d.id }));
+            setRequests(data);
+        });
+
+        const qUsers = collection(db, 'artifacts', appId, 'public', 'data', 'cobranzas_users');
+        const unsubUsers = onSnapshot(qUsers, (snap) => {
+            const data = [];
+            snap.forEach(d => data.push({ ...d.data(), id: d.id }));
+            setUsers(data);
+        });
+
+        return () => { unsubReq(); unsubUsers(); };
+    }, []);
+
+    const handleApprove = async (req) => {
+        try {
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_users', req.email), {
+                ...req,
+                role: 'user', 
+                status: 'active',
+                approvedAt: serverTimestamp()
+            });
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_requests', req.id));
+            showNotify(`Usuario ${req.name} aprobado correctamente`);
+        } catch (e) {
+            console.error(e);
+            showNotify("Error al aprobar usuario", "error");
+        }
+    };
+
+    const handleReject = async (id) => {
+        if (!confirm("¿Está seguro de rechazar esta solicitud?")) return;
+        try {
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_requests', id));
+            showNotify("Solicitud rechazada y eliminada");
+        } catch (e) { showNotify("Error al rechazar", "error"); }
+    };
+
+    const handleDeleteUser = async (id) => {
+        if (!confirm("¿Eliminar acceso a este usuario permanentemente?")) return;
+        if (id === ADMIN_EMAIL) { showNotify("No puede eliminar al Administrador Principal", "error"); return; }
+        try {
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_users', id));
+            showNotify("Usuario eliminado");
+        } catch (e) { showNotify("Error al eliminar usuario", "error"); }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-fade-in">
+            <div className="bg-white w-full max-w-5xl h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden">
+                <div className="bg-slate-800 p-8 flex justify-between items-center text-white border-b border-slate-700">
+                    <div>
+                        <h2 className="text-2xl font-black flex items-center gap-3"><ShieldCheck className="h-8 w-8 text-emerald-400" /> Panel de Administración</h2>
+                        <p className="text-slate-400 text-sm mt-1 ml-11">Gestión de accesos y seguridad</p>
+                    </div>
+                    <button onClick={onClose} className="hover:bg-white/10 p-3 rounded-full transition-colors"><X className="h-6 w-6" /></button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-50">
+                    <div className="space-y-4">
+                        <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><UserPlusIcon className="h-5 w-5 text-blue-600" /> Solicitudes Pendientes <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full text-xs">{requests.length}</span></h3>
+                        {requests.length === 0 ? (
+                            <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center">
+                                <UserCheck className="h-10 w-10 text-slate-200 mx-auto mb-2" />
+                                <p className="text-slate-400 font-bold">No hay solicitudes pendientes por revisar.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {requests.map(req => (
+                                    <div key={req.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-shadow">
+                                        <div>
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div className="bg-blue-50 p-2 rounded-xl text-blue-600"><User className="h-5 w-5" /></div>
+                                                <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-2 py-1 rounded-lg uppercase">Pendiente</span>
+                                            </div>
+                                            <p className="font-bold text-slate-800 text-lg leading-tight">{req.name}</p>
+                                            <p className="text-xs text-slate-500 font-bold uppercase mt-1 tracking-wide">C.I. {req.cedula}</p>
+                                            <p className="text-sm text-slate-600 font-medium mt-3 break-all bg-slate-50 p-2 rounded-lg border border-slate-100 text-center">{req.email}</p>
+                                        </div>
+                                        <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
+                                            <button onClick={() => handleReject(req.id)} className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-bold text-xs hover:bg-red-100 transition-colors">Rechazar</button>
+                                            <button onClick={() => handleApprove(req)} className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200">Aprobar</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t border-slate-200">
+                        <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><Users className="h-5 w-5 text-emerald-600" /> Usuarios Activos <span className="bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full text-xs">{users.length}</span></h3>
+                        <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th className="p-5 font-black text-slate-400 uppercase text-[10px] tracking-wider">Usuario</th>
+                                        <th className="p-5 font-black text-slate-400 uppercase text-[10px] tracking-wider">Identificación</th>
+                                        <th className="p-5 font-black text-slate-400 uppercase text-[10px] tracking-wider">Acceso</th>
+                                        <th className="p-5 font-black text-slate-400 uppercase text-[10px] tracking-wider text-right">Control</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {users.map(u => (
+                                        <tr key={u.id} className="hover:bg-slate-50 transition-colors group">
+                                            <td className="p-5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs ${u.email === ADMIN_EMAIL ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                        {u.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-slate-700">{u.name}</p>
+                                                        <p className="text-xs text-slate-400 font-medium">{u.email}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="p-5 text-slate-500 font-mono font-medium">{u.cedula}</td>
+                                            <td className="p-5">
+                                                {u.email === ADMIN_EMAIL 
+                                                    ? <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider">Administrador</span>
+                                                    : <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider">Estándar</span>
+                                                }
+                                            </td>
+                                            <td className="p-5 text-right">
+                                                {u.email !== ADMIN_EMAIL && (
+                                                    <button onClick={() => handleDeleteUser(u.id)} className="text-slate-300 hover:text-red-600 p-2 hover:bg-red-50 rounded-xl transition-all group-hover:text-red-400" title="Eliminar Usuario"><Trash2 className="h-5 w-5" /></button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- CONFIRMATION MODAL ---
 const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }) => {
   if (!isOpen) return null;
   return (
@@ -110,6 +466,13 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
     meses: '',
     fechaVencimiento: ''
   });
+
+  // Cálculo seguro para evitar NaN
+  const getCuota = () => {
+      const m = parseFloat(formData.monto) || 0;
+      const p = parseInt(formData.meses) || 0;
+      return p > 0 ? (m / p).toFixed(2) : '0.00';
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -167,7 +530,7 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
             <h3 className="text-xl font-bold flex items-center gap-2"><Wallet className="h-6 w-6" /> Nuevo Financiamiento</h3>
             <p className="text-blue-100 text-xs mt-1">Registro manual de contrato</p>
           </div>
-          <button onClick={onClose} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X className="h-6 w-6" /></button>
+          <button onClick={onClose} type="button" className="hover:bg-white/20 p-2 rounded-full transition-colors"><X className="h-6 w-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-8 space-y-4">
           <div className="space-y-1">
@@ -189,7 +552,7 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1">Ejecutivo</label>
                 <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={formData.ejecutivo} onChange={e => setFormData({...formData, ejecutivo: e.target.value})}>
-                    {EXECUTIVES_LIST.map(e => <option key={e}>{e}</option>)}
+                    {(EXECUTIVES_LIST || []).map(e => <option key={e}>{e}</option>)}
                 </select>
              </div>
              <div className="space-y-1">
@@ -216,7 +579,7 @@ const ManualClientForm = ({ onClose, onSave, showNotify }) => {
             <div className="space-y-1">
                <label className="text-[10px] font-black text-slate-400 uppercase">Cuota Mensual</label>
                <div className="w-full p-2 font-black text-emerald-600 text-sm pt-3">
-                 ${(formData.monto && formData.meses && formData.meses > 0) ? (parseFloat(formData.monto) / parseInt(formData.meses)).toFixed(2) : '0.00'}
+                 ${getCuota()}
                </div>
             </div>
           </div>
@@ -247,20 +610,19 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
   const [payQuotas, setPayQuotas] = useState(0);
   const [abonoValue, setAbonoValue] = useState('');
   const [commitmentDateInput, setCommitmentDateInput] = useState('');
-  const [selectedExec, setSelectedExec] = useState(client.ejecutivo || EXECUTIVES_LIST[0]);
+  const [selectedExec, setSelectedExec] = useState(client?.ejecutivo || EXECUTIVES_LIST[0]);
 
   useEffect(() => {
     if (client) {
       setPayQuotas(client.cuotasPagadas || 0);
       setAbonoValue(client.abono || '');
       setCommitmentDateInput(client.commitmentDate || '');
-      // Intentar pre-seleccionar el ejecutivo asignado si existe, sino el primero
-      const matchedExec = EXECUTIVES_LIST.find(e => client.ejecutivo.includes(e));
+      const matchedExec = EXECUTIVES_LIST.find(e => client.ejecutivo && client.ejecutivo.includes(e));
       if (matchedExec) setSelectedExec(matchedExec);
     }
-  }, [client?.id]);
+  }, [client]);
 
-  if (!client) return null;
+  if (!client) return <div className="p-10 text-center font-bold text-slate-500">Seleccione un cliente...</div>;
 
   const totalRecaudoSimulado = (payQuotas * (client.cuota || 0)) + (parseFloat(abonoValue) || 0);
 
@@ -363,69 +725,133 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
           </div>
         </div>
 
-        <div className="space-y-8">
-          <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden no-print">
-             <div className="px-6 py-5 bg-purple-50/50 border-b border-purple-100 flex items-center gap-3">
-               <CalendarIcon className="h-5 w-5 text-purple-600" />
-               <h3 className="font-black text-slate-800">Fecha Compromiso</h3>
-             </div>
-             <div className="p-6 space-y-4">
-                <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500 transition-all" value={commitmentDateInput} onChange={e => setCommitmentDateInput(e.target.value)} />
-                <button onClick={() => onSaveCommitment(client.id, commitmentDateInput)} className="w-full bg-purple-600 text-white py-4 rounded-2xl font-bold hover:bg-purple-700 shadow-lg shadow-purple-100 transition-all">Definir Alerta</button>
-                {client.commitmentDate && (
-                  <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100 flex items-center gap-3 animate-pulse">
-                    <span className="text-sm font-bold text-purple-700">Programado para: {new Date(client.commitmentDate).toLocaleDateString()}</span>
-                  </div>
-                )}
-             </div>
-          </div>
-
-          <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col h-[520px]">
-             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-               <h3 className="font-black text-slate-800 flex items-center gap-2"><ClipboardList className="h-5 w-5 text-slate-400" /> Bitácora de Gestión</h3>
-               <span className="bg-white text-slate-500 px-3 py-1 rounded-full text-xs font-bold border border-slate-200">{(client.comentarios || []).length} registros</span>
-             </div>
-             <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-                {(client.comentarios && client.comentarios.length > 0) ? (
-                  [...client.comentarios].sort((a,b) => b.timestamp - a.timestamp).map((note, i) => (
-                    <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative group">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2">
-                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-tighter">{note.week}</span>
-                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-1"><User className="h-3 w-3" /> {note.author || 'Sistema'}</span>
+        <div className="space-y-6">
+             {/* Card 2: Nueva Gestión (UNIFICADA CON COMPROMISO) */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden border-t-8 border-t-slate-800">
+                <div className="p-6 bg-slate-800 flex justify-between items-center">
+                    <h3 className="font-black text-white flex items-center gap-2 text-lg">
+                        <PenTool className="h-5 w-5 text-blue-400" /> Registrar Gestión
+                    </h3>
+                    <span className="bg-white/10 text-white px-3 py-1 rounded-full text-xs font-bold">Nuevo Registro</span>
+                </div>
+                <div className="p-6 space-y-6">
+                    {/* SECCIÓN 1: COMPROMISO (Integrado) */}
+                    <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <label className="text-[10px] font-black text-blue-400 uppercase mb-2 block flex items-center gap-1">
+                            <CalendarDays className="h-3 w-3" /> Próximo Compromiso
+                        </label>
+                        <div className="flex gap-2">
+                             <input 
+                                type="date" 
+                                className="flex-1 bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 text-slate-700" 
+                                value={commitmentDateInput} 
+                                onChange={e => setCommitmentDateInput(e.target.value)} 
+                            />
+                            <button 
+                                onClick={() => onSaveCommitment(client.id, commitmentDateInput)} 
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-xs hover:bg-blue-700 transition-all shadow-md"
+                            >
+                                Definir
+                            </button>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Clock className="h-3 w-3" /> {new Date(note.date).toLocaleDateString()}</span>
-                      </div>
-                      <p className="text-sm text-slate-700 leading-relaxed font-medium">{note.text}</p>
+                         {client.commitmentDate && (
+                            <div className="mt-2 text-[10px] font-bold text-blue-600 flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3" /> Actual: {new Date(client.commitmentDate).toLocaleDateString()}
+                            </div>
+                        )}
                     </div>
-                  ))
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-50 text-center px-6">
-                    <FileText className="h-12 w-12 mb-3 stroke-[1.5]" />
-                    <p className="text-sm font-bold">No hay gestiones registradas aún.</p>
-                  </div>
-                )}
-             </div>
-             <div className="p-6 border-t border-slate-100 space-y-3 bg-white no-print">
-                <div className="flex gap-2 items-center mb-2 p-2 bg-blue-50 rounded-xl border border-blue-100">
-                    <User className="h-4 w-4 text-blue-500 ml-1" />
-                    <span className="text-xs font-bold text-blue-800 mr-2">Responsable de Gestión:</span>
-                    <select className="flex-1 bg-white border border-blue-200 rounded-lg p-1.5 text-xs font-bold outline-none text-blue-900" value={selectedExec} onChange={e => setSelectedExec(e.target.value)}>
-                        {EXECUTIVES_LIST.map(e => <option key={e}>{e}</option>)}
-                    </select>
+
+                    {/* SECCIÓN 2: FORMULARIO DE GESTIÓN */}
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Detalles de Actividad</label>
+                        </div>
+                        
+                        {/* Executive & Date Inputs Compact */}
+                         <div className="grid grid-cols-2 gap-3">
+                            <div className="relative">
+                                <select 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 appearance-none text-slate-700"
+                                    value={selectedExec} 
+                                    onChange={e => setSelectedExec(e.target.value)}
+                                >
+                                    {(EXECUTIVES_LIST || []).map(e => <option key={e}>{e}</option>)}
+                                </select>
+                                <User className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                            </div>
+                             <input 
+                                type="date" 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 text-slate-700" 
+                                value={managementDate} 
+                                onChange={e => setManagementDate(e.target.value)} 
+                            />
+                        </div>
+
+                         <div className="flex bg-slate-100 p-1 rounded-xl">
+                                {["Semana 1", "Semana 2", "Semana 3", "Semana 4", "Semana 5"].map(w => (
+                                    <button
+                                        key={w}
+                                        onClick={() => setManagementWeek(w)}
+                                        className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg transition-all ${managementWeek === w ? 'bg-blue-600 text-white shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        {w.replace("Semana ", "SEM ")}
+                                    </button>
+                                ))}
+                         </div>
+
+                        <div className="relative">
+                            <textarea 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none transition-all placeholder:text-slate-400 min-h-[120px] font-medium text-slate-700" 
+                                placeholder="Escriba el resultado de la gestión aquí..." 
+                                value={commentText} 
+                                onChange={e => setCommentText(e.target.value)} 
+                            />
+                            <button 
+                                disabled={!commentText.trim()} 
+                                onClick={() => { onAddComment(client.id, commentText, managementWeek, managementDate, selectedExec); setCommentText(''); }} 
+                                className="absolute bottom-3 right-3 bg-blue-600 text-white p-2.5 rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-50 transition-all hover:scale-105 flex items-center justify-center group"
+                            >
+                                <Send className="h-5 w-5 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                  <select className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold" value={managementWeek} onChange={e => setManagementWeek(e.target.value)}>
-                    {["Semana 1", "Semana 2", "Semana 3", "Semana 4", "Semana 5"].map(w => <option key={w}>{w}</option>)}
-                  </select>
-                  <input type="date" className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold" value={managementDate} onChange={e => setManagementDate(e.target.value)} />
+            </div>
+
+            {/* Card 3: Historial (Timeline style) */}
+            <div className="bg-slate-50 rounded-[2rem] border border-slate-200 overflow-hidden flex flex-col h-[400px]">
+                <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white">
+                    <h3 className="font-black text-slate-400 flex items-center gap-2 uppercase tracking-widest text-xs"><Clock className="h-4 w-4" /> Historial de Cambios</h3>
+                    <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-[10px] font-black border border-slate-200">{(client.comentarios || []).length}</span>
                 </div>
-                <div className="relative">
-                  <textarea className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none transition-all" rows="3" placeholder="Ingresar comentario de gestión..." value={commentText} onChange={e => setCommentText(e.target.value)} />
-                  <button disabled={!commentText.trim()} onClick={() => { onAddComment(client.id, commentText, managementWeek, managementDate, selectedExec); setCommentText(''); }} className="absolute bottom-4 right-4 bg-blue-600 text-white p-2 rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-0 transition-all"><Save className="h-5 w-5" /></button>
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {(client.comentarios && client.comentarios.length > 0) ? (
+                        [...client.comentarios].sort((a,b) => b.timestamp - a.timestamp).map((note, i) => (
+                        <div key={i} className="flex gap-4 group">
+                            <div className="flex flex-col items-center">
+                                <div className="w-8 h-8 rounded-full bg-white text-slate-400 flex items-center justify-center text-xs font-black border-2 border-slate-200 shrink-0">
+                                    {note.author ? note.author.charAt(0) : 'S'}
+                                </div>
+                                {i < client.comentarios.length - 1 && <div className="w-0.5 h-full bg-slate-200 my-2 rounded-full group-hover:bg-blue-200 transition-colors"></div>}
+                            </div>
+                            <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm group-hover:shadow-md transition-all relative">
+                                <div className="absolute top-4 right-4 text-[9px] font-black text-slate-300 uppercase tracking-widest">{new Date(note.date).toLocaleDateString()}</div>
+                                <div className="mb-2">
+                                    <p className="text-xs font-black text-slate-800">{note.author || 'Sistema'}</p>
+                                    <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">{note.week}</p>
+                                </div>
+                                <p className="text-xs text-slate-600 leading-relaxed font-medium">{note.text}</p>
+                            </div>
+                        </div>
+                        ))
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-50 text-center px-6">
+                        <MessageSquare className="h-12 w-12 mb-3 stroke-[1.5]" />
+                        <p className="text-sm font-bold">Sin registros aún.</p>
+                        </div>
+                    )}
                 </div>
-             </div>
-          </div>
+            </div>
         </div>
       </div>
     </div>
@@ -434,7 +860,8 @@ const ClientDetailView = ({ client, onBack, onSavePayment, onAddComment, onSaveC
 
 // --- MAIN COMPONENT ---
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null); // Firebase Connection
+  const [loginEmail, setLoginEmail] = useState(''); // App Session User
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard'); 
   const [selectedClientId, setSelectedClientId] = useState(null);
@@ -453,6 +880,12 @@ export default function App() {
   // NUEVO ESTADO: Filtro Drill-down (Interactivo)
   const [drillDown, setDrillDown] = useState(null);
 
+  // LOGIN FLOW STATES
+  const [showRegisterRequest, setShowRegisterRequest] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false); // NUEVO ESTADO
+
   const fileInputRef = useRef(null);
 
   // Load XLSX library via CDN
@@ -468,28 +901,29 @@ export default function App() {
     }
   }, []);
 
+  // INIT AUTH: Always connect anonymously to Firebase to allow DB reads/writes for login check
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
+    const initConnection = async () => {
+        try {
+            await signInAnonymously(auth);
+        } catch (e) {
+            console.error("Auth conn error", e);
         }
-      } catch (e) {
-        console.error("Auth error:", e);
-        setLoading(false);
-      }
     };
-    initAuth();
-
+    
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false); 
+      if (!u) {
+          // If disconnected, try reconnect
+          initConnection();
+      }
     });
+    
     return () => unsubscribe();
   }, []);
 
+  // Listen to Firestore updates
   useEffect(() => {
     if (!user) return;
     const collectionsPath = ['artifacts', appId, 'public', 'data'];
@@ -512,6 +946,118 @@ export default function App() {
   }, [user]);
 
   const showNotify = (message, type = 'success') => setNotification({ message, type });
+
+  // Handle Login Logic with Access Control
+  const handleLogin = async (email, password, onError) => {
+      try {
+          if (email === ADMIN_EMAIL && password === '123456') {
+              setLoginEmail(email);
+              showNotify(`Bienvenido Administrador`);
+              return;
+          }
+
+          // Verificar si el usuario existe y está aprobado en la colección "users"
+          const userDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_users', email);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+              const userData = userSnap.data();
+              if (userData.password === password) {
+                  if (userData.status === 'active') {
+                      setLoginEmail(email);
+                      showNotify(`Bienvenido, ${userData.name}`);
+                  } else {
+                      onError('Su cuenta está desactivada.');
+                  }
+              } else {
+                  onError('Contraseña incorrecta.');
+              }
+          } else {
+              // Verificar si está pendiente
+              const qPending = query(collection(db, 'artifacts', appId, 'public', 'data', 'cobranzas_requests'), where('email', '==', email));
+              const pendingSnap = await getDocs(qPending);
+              if (!pendingSnap.empty) {
+                  onError('Su solicitud está pendiente de aprobación por el administrador.');
+              } else {
+                  onError('Usuario no registrado. Solicite acceso.');
+              }
+          }
+      } catch (error) {
+          console.error(error);
+          onError("Error de conexión. Intente nuevamente.");
+      }
+  };
+
+  const handleRegisterRequest = async (data) => {
+      try {
+          const reqRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_requests', data.email); // ID es el email
+          await setDoc(reqRef, {
+              ...data,
+              status: 'pending',
+              requestedAt: serverTimestamp()
+          });
+          setShowRegisterRequest(false);
+          showNotify("Solicitud enviada exitosamente. Espere aprobación.");
+      } catch (e) {
+          console.error(e);
+          showNotify("Error al enviar solicitud.", "error");
+      }
+  };
+
+  const handlePasswordRecovery = async (data) => {
+      try {
+          const userDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_users', data.email);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+              // Actualizar contraseña directamente
+              await updateDoc(userDocRef, { password: data.newPassword });
+              setShowForgotPassword(false);
+              showNotify("Contraseña actualizada. Ahora puede iniciar sesión con su nueva clave.");
+          } else {
+              showNotify("Correo no encontrado en usuarios activos.", "error");
+          }
+      } catch (e) {
+          console.error(e);
+          showNotify("Error al procesar recuperación.", "error");
+      }
+  };
+
+  const handleChangePassword = async (email, currentPassword, newPassword) => {
+     try {
+          const userDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'cobranzas_users', email);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+              const userData = userSnap.data();
+              // Verificar contraseña actual
+              if (userData.password === currentPassword) {
+                  await updateDoc(userDocRef, { password: newPassword });
+                  setShowChangePassword(false);
+                  showNotify("Contraseña actualizada exitosamente.");
+              } else {
+                  showNotify("La contraseña actual es incorrecta.", "error");
+              }
+          } else {
+             // Si es admin backdoor
+             if (email === ADMIN_EMAIL && currentPassword === '123456') {
+                 showNotify("El usuario administrador principal no puede cambiar su clave por este medio.", "error");
+             } else {
+                 showNotify("Error de usuario.", "error");
+             }
+          }
+     } catch(e) {
+         console.error(e);
+         showNotify("Error al actualizar contraseña.", "error");
+     }
+  };
+
+  // FIX: Solo limpiar el email local, NO cerrar la sesión de firebase (se necesita para el login check)
+  const handleLogout = () => {
+      setLoginEmail('');
+      setView('dashboard');
+      setShowAdminPanel(false);
+  };
 
   const mergedData = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -763,7 +1309,7 @@ export default function App() {
         
         <td style="mso-number-format:'0.00'">${c.montoPagadoTotal.toFixed(2)}</td>
         <td>${c.fechaAdjudicacion ? 'SI' : 'NO'}</td>
-        <td>${(c.comentarios || []).map(com => `[${com.date.split('T')[0]}] ${com.text}`).join(' | ')}</td>
+        <td>${(c.comentarios || []).map(com => `[${com.date.split('T')[0]}] (${com.author || 'Gestor'}): ${com.text}`).join(' | ')}</td>
       </tr>
     `).join('');
 
@@ -1362,51 +1908,88 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      <nav className="bg-white/80 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-[50] no-print">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
-           <div className="flex items-center gap-4">
-             <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-3 rounded-2xl text-white shadow-lg shadow-blue-500/20"><Activity className="h-6 w-6" /></div>
-             <div>
-               <h1 className="text-xl font-black text-slate-900 tracking-tighter leading-none">COBRANZAS 360</h1>
-               <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Intelligence Platform v{APP_VERSION}</p>
-             </div>
-           </div>
-           <div className="hidden md:flex bg-slate-100 p-1.5 rounded-[1.5rem] border border-slate-200">
-             {[
-               {id: 'dashboard', icon: Activity, label: 'Dashboard'},
-               {id: 'list', icon: Users, label: 'Cartera'},
-               {id: 'financing', icon: Wallet, label: 'Financiamiento'}, // NUEVO TAG
-               {id: 'alerts', icon: Bell, label: 'Alertas'}
-             ].map(item => (
-               <button key={item.id} onClick={() => { setView(item.id); setDrillDown(null); }} className={`px-6 py-2.5 rounded-[1rem] text-xs font-black uppercase transition-all flex items-center gap-2 ${view === item.id ? 'bg-white text-blue-600 shadow-md shadow-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}>
-                 <item.icon className="h-4 w-4" /> {item.label}
-               </button>
-             ))}
-           </div>
-        </div>
-      </nav>
+      {user && loginEmail ? (
+        <>
+          <nav className="bg-white/80 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-[50] no-print">
+            <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
+               <div className="flex items-center gap-4">
+                 <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-3 rounded-2xl text-white shadow-lg shadow-blue-500/20"><Activity className="h-6 w-6" /></div>
+                 <div>
+                   <h1 className="text-xl font-black text-slate-900 tracking-tighter leading-none">COBRANZAS 360</h1>
+                   <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Intelligence Platform v{APP_VERSION}</p>
+                 </div>
+               </div>
+               <div className="flex items-center gap-4">
+                 <div className="hidden md:flex bg-slate-100 p-1.5 rounded-[1.5rem] border border-slate-200">
+                   {[
+                     {id: 'dashboard', icon: Activity, label: 'Dashboard'},
+                     {id: 'list', icon: Users, label: 'Cartera'},
+                     {id: 'financing', icon: Wallet, label: 'Financiamiento'}, 
+                     {id: 'alerts', icon: Bell, label: 'Alertas'}
+                   ].map(item => (
+                     <button key={item.id} onClick={() => { setView(item.id); setDrillDown(null); }} className={`px-6 py-2.5 rounded-[1rem] text-xs font-black uppercase transition-all flex items-center gap-2 ${view === item.id ? 'bg-white text-blue-600 shadow-md shadow-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}>
+                       <item.icon className="h-4 w-4" /> {item.label}
+                     </button>
+                   ))}
+                 </div>
+                 
+                 <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Usuario</span>
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1"><UserCheck className="h-3 w-3 text-emerald-500" /> {loginEmail || 'Conectado'}</span>
+                    </div>
+                    <button onClick={() => setShowChangePassword(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 p-3 rounded-xl transition-colors" title="Cambiar Contraseña">
+                        <Key className="h-5 w-5" />
+                    </button>
+                    {loginEmail === ADMIN_EMAIL && (
+                        <button onClick={() => setShowAdminPanel(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 p-3 rounded-xl transition-colors" title="Panel Admin">
+                            <ShieldCheck className="h-5 w-5" />
+                        </button>
+                    )}
+                    <button onClick={handleLogout} className="bg-red-50 hover:bg-red-100 text-red-600 p-3 rounded-xl transition-colors" title="Cerrar Sesión">
+                        <LogOut className="h-5 w-5" />
+                    </button>
+                 </div>
+               </div>
+            </div>
+          </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-10">
-        {loading ? <SkeletonLoader /> : (
-          <>
-            {view === 'dashboard' && renderDashboard()}
-            {(view === 'list' || view === 'financing') && renderClientList()}
-            {view === 'alerts' && renderAlerts()}
-            {view === 'detail' && <ClientDetailView client={selectedClient} onBack={() => setView('list')} onSavePayment={handleSavePayment} onAddComment={handleAddComment} onSaveCommitment={handleSaveCommitment} onDeleteManual={handleDeleteManualClient} />}
-          </>
-        )}
-      </main>
+          <main className="max-w-7xl mx-auto px-6 py-10">
+            {loading ? <SkeletonLoader /> : (
+              <>
+                {view === 'dashboard' && renderDashboard()}
+                {(view === 'list' || view === 'financing') && renderClientList()}
+                {view === 'alerts' && renderAlerts()}
+                {view === 'detail' && <ClientDetailView client={selectedClient} onBack={() => setView('list')} onSavePayment={handleSavePayment} onAddComment={handleAddComment} onSaveCommitment={handleSaveCommitment} onDeleteManual={handleDeleteManualClient} />}
+              </>
+            )}
+          </main>
 
-      {showManualForm && <ManualClientForm onClose={() => setShowManualForm(false)} onSave={handleSaveManualClient} showNotify={showNotify} />}
-      {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
-      
-      <ConfirmationModal 
-        isOpen={showClearConfirm} 
-        onClose={() => setShowClearConfirm(false)} 
-        onConfirm={confirmClearBase} 
-        title="¿Borrar Base Importada?" 
-        message="Esta acción eliminará todos los datos cargados desde el archivo CSV. Los registros de financiamiento manual NO se verán afectados. ¿Desea continuar?" 
-      />
+          {showManualForm && <ManualClientForm onClose={() => setShowManualForm(false)} onSave={handleSaveManualClient} showNotify={showNotify} />}
+          {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} showNotify={showNotify} />}
+          {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} onSubmit={handleChangePassword} loading={loading} userEmail={loginEmail} />}
+          {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
+          
+          <ConfirmationModal 
+            isOpen={showClearConfirm} 
+            onClose={() => setShowClearConfirm(false)} 
+            onConfirm={confirmClearBase} 
+            title="¿Borrar Base Importada?" 
+            message="Esta acción eliminará todos los datos cargados desde el archivo CSV. Los registros de financiamiento manual NO se verán afectados. ¿Desea continuar?" 
+          />
+        </>
+      ) : (
+        <>
+            {showRegisterRequest ? (
+                <RequestAccessForm onCancel={() => setShowRegisterRequest(false)} onSubmit={handleRegisterRequest} loading={loading} />
+            ) : showForgotPassword ? (
+                <ForgotPasswordForm onCancel={() => setShowForgotPassword(false)} onSubmit={handlePasswordRecovery} loading={loading} />
+            ) : (
+                <LoginPage onLogin={handleLogin} onRegisterRequest={() => setShowRegisterRequest(true)} onForgotPassword={() => setShowForgotPassword(true)} />
+            )}
+            {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
+        </>
+      )}
     </div>
   );
 }
